@@ -99,7 +99,7 @@ def build_firmware_version():
       2.31 = firmware 9.4,  2.32 = firmware 9.6 (ATEM Mini 9.5.1 ≈ 2.31)
     ATEM Software Control 10.x still uses the same hardware protocol.
     NOTE: major=10 is completely invalid — the SDK rejects it immediately."""
-    data = struct.pack('>HH', 2, 32)  # protocol v2.31 (firmware 9.4–9.5)
+    data = struct.pack('>HH', 2, 28)  # protocol v2.28 (firmware 8.0)
     return build_field('_ver', data)
 
 
@@ -113,12 +113,11 @@ def build_product_name():
 
 
 def build_topology():
-    """_top field: hardware topology for ATEM Mini.
-    Must be padded to a 4-byte boundary or field stream parsing breaks.
-    Values matched to ATEM Mini (base model, 4 HDMI inputs)."""
+    """_top field: hardware topology.
+    Must be padded to a 4-byte boundary or field stream parsing breaks."""
     data = bytes([
         1,    # M/E units
-        4,    # sources (4 HDMI inputs on ATEM Mini)
+        8,    # sources (8 matches ATEM 1 M/E min inputs)
         2,    # downstream keyers
         1,    # AUX busses
         0,    # MixMinus outputs
@@ -138,7 +137,8 @@ def build_topology():
         1,    # configurable outputs only
         1,    # unknown
         0x20, 3, 0xe8,  # unknown bytes matching ATEM Mini
-    ])  # 28 bytes total — 4-byte aligned
+        0, 0, 0, 0      # extra padding for newer SDKs
+    ])  # 32 bytes total — 4-byte aligned
     assert len(data) % 4 == 0, f"_top data must be 4-byte aligned, got {len(data)}"
     return build_field('_top', data)
 
@@ -160,6 +160,11 @@ def build_program_input():
     data = struct.pack('>BxH', 0, 1)  # M/E 0, input 1
     return build_field('PrgI', data)
 
+def build_video_mode():
+    """VidM field: video mode. 1080p60"""
+    data = struct.pack('>I', 0x31307073)
+    return build_field('VidM', data)
+
 
 def build_preview_input():
     """PrvI field: current preview input."""
@@ -167,14 +172,14 @@ def build_preview_input():
     return build_field('PrvI', data)
 
 
-def build_macro_properties(index, name, description):
+def build_macro_properties(index, name, description, is_used=1):
     """MPrp field: macro properties for a single slot."""
     name_bytes = name.encode('utf-8')[:63]
     desc_bytes = description.encode('utf-8')[:255]
 
     data = struct.pack('>HBB',
         index,               # macro index
-        1,                   # isUsed = 1
+        is_used,             # isUsed
         0,                   # hasUnsupportedOps = 0
     )
     # Name length + description length
@@ -195,12 +200,13 @@ def build_macro_pool_config(max_macros):
     return build_field('_MAC', data)
 
 
-def build_macro_run_status(is_running=False, is_waiting=False, loop=False, index=0xFFFF):
+def build_macro_run_status(is_running=False, is_waiting=False, loop=False, index=0):
     """MRPr field: macro run player status."""
-    data = struct.pack('>BBBHH',
+    data = struct.pack('>BBBBHH',
         1 if is_running else 0,
         1 if is_waiting else 0,
         1 if loop else 0,
+        0,
         index,
         0
     )
@@ -293,6 +299,7 @@ class ATEMSimulator:
         fields.append(build_mediaplayer_slots())
 
         # Video state
+        fields.append(build_video_mode())
         fields.append(build_program_input())
         fields.append(build_preview_input())
 
@@ -301,8 +308,12 @@ class ATEMSimulator:
         fields.append(build_macro_pool_config(max_macros))
 
         # Macro properties for each defined macro
-        for i, (name, desc) in enumerate(self.macros):
-            fields.append(build_macro_properties(i, name, desc))
+        for i in range(max_macros):
+            if i < len(self.macros):
+                name, desc = self.macros[i]
+                fields.append(build_macro_properties(i, name, desc))
+            else:
+                fields.append(build_macro_properties(i, "", "", is_used=0))
 
         # Macro run status (idle)
         fields.append(build_macro_run_status())
@@ -315,12 +326,13 @@ class ATEMSimulator:
         current_payload = b''
         seq = 1
 
+        ack_id = 0
         for field in fields:
-            if len(current_payload) + len(field) > 1400:
+            if len(current_payload) + len(field) > 900:
                 # Flush current packet
                 pkt_len = HEADER_SIZE + len(current_payload)
-                header = build_header(FLAG_RELIABLE, pkt_len, session_id,
-                                     local_seq=seq)
+                header = build_header(FLAG_RELIABLE | FLAG_ACK, pkt_len, session_id,
+                                     ack_id=ack_id, local_seq=seq)
                 packets.append(header + current_payload)
                 seq += 1
                 current_payload = field
@@ -330,14 +342,14 @@ class ATEMSimulator:
         # Final packet with remaining fields
         if current_payload:
             pkt_len = HEADER_SIZE + len(current_payload)
-            header = build_header(FLAG_RELIABLE, pkt_len, session_id,
-                                 local_seq=seq)
+            header = build_header(FLAG_RELIABLE | FLAG_ACK, pkt_len, session_id,
+                                 ack_id=ack_id, local_seq=seq)
             packets.append(header + current_payload)
             seq += 1
 
         # Empty packet to signal end of dump
-        header = build_header(FLAG_RELIABLE, HEADER_SIZE, session_id,
-                             local_seq=seq)
+        header = build_header(FLAG_RELIABLE | FLAG_ACK, HEADER_SIZE, session_id,
+                             ack_id=ack_id, local_seq=seq)
         packets.append(header)
 
         return packets, seq
@@ -360,8 +372,9 @@ class ATEMSimulator:
         header = build_header(FLAG_SYN, pkt_len, client_session)
         self.sock.sendto(header + payload, addr)
 
-        self.clients[addr] = {
+        self.clients[client_session] = {
             'session': client_session,
+            'addr': addr,
             'state': 'handshake',
             'remote_seq': 0,
             'local_seq': 0,
@@ -386,13 +399,13 @@ class ATEMSimulator:
 
         # SYN — new connection or secondary "control" SYN from SDK
         if flags & FLAG_SYN:
-            existing = self.clients.get(addr)
+            client_session = pkt['session']
+            existing = self.clients.get(client_session)
             # The BMDSwitcherAPI sends a second SYN with session 0x8000 after
             # receiving the state dump. This is a "control channel" SYN —
             # complete the handshake but skip the state dump (go straight to
             # 'connected'). Sending a second dump causes StateSync failure.
-            if existing and existing['state'] == 'connected' or pkt['session'] == 0x8000:
-                client_session = pkt['session']
+            if (existing and existing['state'] == 'connected') or client_session == 0x8000:
                 self.log(f"SYN from {addr[0]}:{addr[1]} (session 0x{client_session:04x}) [secondary — no dump]")
                 payload = struct.pack('>B7x', 0x02)
                 pkt_len = HEADER_SIZE + len(payload)
@@ -400,8 +413,9 @@ class ATEMSimulator:
                 self.sock.sendto(header + payload, addr)
                 self.log(f"SYN-ACK sent to {addr[0]}:{addr[1]} (session 0x{client_session:04x})")
                 # Mark as 'handshake2' — ACK will move directly to 'connected'
-                self.clients[addr] = {
+                self.clients[client_session] = {
                     'session': client_session,
+                    'addr': addr,
                     'state': 'handshake2',
                     'remote_seq': 0,
                     'local_seq': 0,
@@ -414,7 +428,7 @@ class ATEMSimulator:
                 self.handle_handshake(pkt, addr)
             return
 
-        client = self.clients.get(addr)
+        client = self.clients.get(pkt['session'])
         if not client:
             return
 
@@ -577,12 +591,12 @@ class ATEMSimulator:
             time.sleep(1.0)
             now = time.time()
             disconnected = []
-            for addr, client in list(self.clients.items()):
+            for session_id, client in list(self.clients.items()):
                 if client['state'] != 'connected':
                     continue
                 if now - client['last_contact'] > 10:
-                    self.log(f"Client {addr[0]}:{addr[1]} timed out")
-                    disconnected.append(addr)
+                    self.log(f"Client {client['addr'][0]}:{client['addr'][1]} timed out")
+                    disconnected.append(session_id)
                     continue
                 # Send keepalive (empty reliable packet)
                 client['remote_seq'] = (client.get('remote_seq', 0) or 0) + 1
@@ -590,12 +604,12 @@ class ATEMSimulator:
                                     client['session'],
                                     local_seq=client['remote_seq'])
                 try:
-                    self.sock.sendto(header, addr)
+                    self.sock.sendto(header, client['addr'])
                 except Exception:
-                    disconnected.append(addr)
+                    disconnected.append(session_id)
 
-            for addr in disconnected:
-                del self.clients[addr]
+            for session_id in disconnected:
+                del self.clients[session_id]
 
     def run(self):
         """Main server loop."""
@@ -630,7 +644,7 @@ class ATEMSimulator:
                 except socket.timeout:
                     continue
                 except OSError:
-                    break
+                    continue
         except KeyboardInterrupt:
             print("\n[!] Shutting down simulator...")
         finally:

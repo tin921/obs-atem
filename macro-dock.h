@@ -11,6 +11,7 @@
 #include <QTimer>
 #include <QToolButton>
 #include <QFrame>
+#include <QTextEdit>
 #include <memory>
 
 #include "atem-controller.h"
@@ -84,6 +85,10 @@ private:
     QFrame*       m_playerBar = nullptr;
     QLabel*       m_runningLabel = nullptr;
     QPushButton*  m_stopBtn = nullptr;
+
+    // Trace area
+    QTextEdit*    m_traceArea = nullptr;
+    QPushButton*  m_copyBtn = nullptr;
 
     // Poll timer
     QTimer*       m_pollTimer = nullptr;

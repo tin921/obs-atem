@@ -59,6 +59,7 @@ class AtemController {
 public:
     using StateChangeCallback = std::function<void(AtemState)>;
     using MacroUpdateCallback = std::function<void()>;
+    using TraceCallback = std::function<void(const std::string&)>;
 
     AtemController();
     ~AtemController();
@@ -83,8 +84,10 @@ public:
     // Callbacks
     void setStateChangeCallback(StateChangeCallback cb) { m_onStateChange = cb; }
     void setMacroUpdateCallback(MacroUpdateCallback cb) { m_onMacroUpdate = cb; }
+    void setTraceCallback(TraceCallback cb) { m_onTrace = cb; }
 
 private:
+    void trace(const char* format, ...);
     bool connectToAddress(const std::string& address);
     void cleanup();
 
@@ -103,4 +106,5 @@ private:
 
     StateChangeCallback m_onStateChange;
     MacroUpdateCallback m_onMacroUpdate;
+    TraceCallback m_onTrace;
 };

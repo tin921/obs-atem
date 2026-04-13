@@ -1,5 +1,5 @@
 /*
- * obs-atem-macros
+ * obs-atem
  *
  * OBS Studio plugin that provides a dockable panel for triggering
  * Blackmagic ATEM Mini macros directly via USB (BMDSwitcherAPI COM).
@@ -18,7 +18,7 @@
 #include "macro-dock.h"
 
 OBS_DECLARE_MODULE()
-OBS_MODULE_USE_DEFAULT_LOCALE("obs-atem-macros", "en-US")
+OBS_MODULE_USE_DEFAULT_LOCALE("obs-atem", "en-US")
 
 static AtemMacroDock* macroDock = nullptr;
 

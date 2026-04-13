@@ -3,6 +3,20 @@
 A native C++ OBS Studio plugin that adds a dockable panel for triggering Blackmagic
 ATEM Mini macros. Connects directly via USB — no middleware server needed.
 
+## Table of Contents
+
+- [Architecture](#architecture)
+- [Features](#features)
+- [Build Prerequisites](#build-prerequisites)
+- [Build](#build)
+- [Install](#install)
+- [Usage](#usage)
+- [Troubleshooting](#troubleshooting)
+- [ATEM Simulator (dev/testing without hardware)](#atem-simulator-devtesting-without-hardware)
+- [File Structure](#file-structure)
+- [Notes](#notes)
+- [License](#license)
+
 ## Architecture
 
 ```
@@ -10,22 +24,24 @@ ATEM Mini macros. Connects directly via USB — no middleware server needed.
 │          OBS Studio             │
 │  ┌───────────────────────────┐  │
 │  │   ATEM Macro Dock (Qt)    │  │
-│  │  ┌─────┐ ┌─────┐ ┌─────┐ │  │
-│  │  │ M1  │ │ M2  │ │ M3  │ │  │
-│  │  └─────┘ └─────┘ └─────┘ │  │
-│  │  ┌─────┐ ┌─────┐         │  │
-│  │  │ M4  │ │ M5  │   ⚙     │  │
-│  │  └─────┘ └─────┘         │  │
+│  │  ┌─────┐ ┌─────┐ ┌─────┐  │  │
+│  │  │ M1  │ │ M2  │ │ M3  │  │  │
+│  │  └─────┘ └─────┘ └─────┘  │  │
+│  │  ┌─────┐ ┌─────┐          │  │
+│  │  │ M4  │ │ M5  │    *     │  │
+│  │  └─────┘ └─────┘          │  │
 │  └───────────┬───────────────┘  │
 │              │ COM / USB        │
 │              ▼                  │
 │     BMDSwitcherAPI.dll          │
 └──────────────┬──────────────────┘
-               │ USB
-        ┌──────▼──────┐
-        │  ATEM Mini  │
-        │  (macros)   │
-        └─────────────┘
+               │ USB (production)
+               │ or 127.0.0.1 UDP (dev/testing)
+        ┌──────▼──────┐      ┌─────────────────────┐
+        │  ATEM Mini  │  OR  │  atem-simulator/    │
+        │  Device     │      │  run.py             │
+        └─────────────┘      │  (no hardware)      │
+                             └─────────────────────┘
 ```
 
 ## Features
@@ -33,10 +49,10 @@ ATEM Mini macros. Connects directly via USB — no middleware server needed.
 - **Direct USB connection** — auto-detects ATEM on startup, no IP needed
 - **Macro grid** — 2-column grid showing all macros by name, one click to run
 - **Running indicator** — green highlight + bottom bar shows active macro
-- **Settings panel (⚙)** — connection status, manual IP connect, troubleshooting info
+- **Settings panel (*)** — connection status, manual IP connect, troubleshooting info
 - **OBS-native dock** — drag and position anywhere in OBS like Audio Mixer
 
-## Prerequisites
+## Build Prerequisites
 
 1. **ATEM Software Control** installed
    - Download from [Blackmagic Support](https://www.blackmagicdesign.com/support/family/atem-live-production-switchers)
@@ -59,7 +75,7 @@ ATEM Mini macros. Connects directly via USB — no middleware server needed.
 
 ```powershell
 # Clone this repo
-cd obs-atem-macros
+cd obs-atem
 
 # Create build directory
 mkdir build && cd build
@@ -73,7 +89,7 @@ cmake .. -G "Visual Studio 17 2022" -A x64 ^
 # Build
 cmake --build . --config Release
 
-# The output DLL will be in build/Release/obs-atem-macros.dll
+# The output DLL will be in build/Release/obs-atem.dll
 ```
 
 ## Install
@@ -81,13 +97,13 @@ cmake --build . --config Release
 Copy the built DLL to your OBS plugins folder:
 
 ```powershell
-copy Release\obs-atem-macros.dll ^
+copy Release\obs-atem.dll ^
     "C:\Program Files\obs-studio\obs-plugins\64bit\"
 ```
 
 Or for portable installs:
 ```powershell
-copy Release\obs-atem-macros.dll ^
+copy Release\obs-atem.dll ^
     "<obs-portable>\obs-plugins\64bit\"
 ```
 
@@ -116,17 +132,41 @@ copy Release\obs-atem-macros.dll ^
 → Check that the DLL is in the correct `obs-plugins/64bit/` folder.
   Check the OBS log file for `[ATEM Macros]` entries.
 
+## ATEM Simulator (dev/testing without hardware)
+
+The `atem-simulator/` folder contains two tools:
+
+- **`run.py`** — emulates an ATEM Mini on the network, no hardware required
+- **`capture.py`** — connects to a real ATEM and captures the full session log for updating the simulator
+
+```bash
+cd atem-simulator
+python run.py              # uses built-in default macros
+python run.py --macros macros.tsv  # load macros from TSV file
+```
+
+Then in the OBS plugin settings (⚙), set the connection to **Manual IP** →
+`127.0.0.1`. The plugin connects, enumerates macros, and macro buttons work
+exactly as they would against real hardware.
+
+See [atem-simulator/README.md](atem-simulator/README.md) for the full workflow.
+
 ## File Structure
 
 ```
-obs-atem-macros/
+obs-atem/
 ├── CMakeLists.txt              # Build configuration
 ├── README.md
-└── src/
-    ├── plugin-main.cpp         # OBS plugin entry point
-    ├── atem-controller.h/cpp   # BMD SDK COM wrapper
-    ├── macro-dock.h/cpp        # Qt dock widget (macro grid UI)
-    └── settings-dialog.h/cpp   # Connection settings + troubleshooting
+├── atem-simulator/
+│   ├── README.md               # Overview and workflow for both tools
+│   ├── run.py                  # ATEM Mini UDP protocol emulator
+│   ├── run.py.md               # run.py docs
+│   ├── capture.py              # Captures full ATEM session log for updating run.py
+│   └── capture.py.md           # capture.py docs
+├── plugin-main.cpp             # OBS plugin entry point
+├── atem-controller.h/cpp       # BMD SDK COM wrapper
+├── macro-dock.h/cpp            # Qt dock widget (macro grid UI)
+└── settings-dialog.h/cpp       # Connection settings + troubleshooting
 ```
 
 ## Notes

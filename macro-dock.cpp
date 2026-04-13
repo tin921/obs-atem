@@ -6,6 +6,10 @@
 #include <QMessageBox>
 #include <QApplication>
 #include <QStyle>
+#include <QTextEdit>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
 
 // ── Stylesheet (matches OBS dark theme) ──────────────────────
 
@@ -230,6 +234,20 @@ AtemMacroDock::AtemMacroDock(QWidget* parent)
         QMetaObject::invokeMethod(this, "onRefresh", Qt::QueuedConnection);
     });
 
+    m_atem->setTraceCallback([this](const std::string& msg) {
+        QMetaObject::invokeMethod(this, [this, msg]() {
+            if (m_traceArea) {
+                auto now = std::chrono::system_clock::now();
+                auto time_t_now = std::chrono::system_clock::to_time_t(now);
+                auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+                std::stringstream ss;
+                ss << std::put_time(std::localtime(&time_t_now), "[%H:%M:%S.")
+                   << std::setfill('0') << std::setw(3) << ms.count() << "] " << msg;
+                m_traceArea->append(QString::fromStdString(ss.str()));
+            }
+        });
+    });
+
     blog(LOG_INFO, "[ATEM Macros] AtemMacroDock ctor: creating poll timer...");
     m_pollTimer = new QTimer(this);
     connect(m_pollTimer, &QTimer::timeout, this, &AtemMacroDock::pollUpdate);
@@ -324,6 +342,39 @@ void AtemMacroDock::buildUI() {
     m_stopBtn->setObjectName("stopBtn");
     connect(m_stopBtn, &QPushButton::clicked, this, &AtemMacroDock::onStopMacro);
     playerLayout->addWidget(m_stopBtn);
+
+    // Add trace area before player bar
+    auto* traceWidget = new QWidget(m_centralWidget);
+    auto* traceHLayout = new QHBoxLayout(traceWidget);
+    traceHLayout->setContentsMargins(4, 4, 4, 4);
+    traceHLayout->setSpacing(4);
+
+    m_traceArea = new QTextEdit(traceWidget);
+    m_traceArea->setReadOnly(true);
+    m_traceArea->setMaximumHeight(80);
+    m_traceArea->setStyleSheet("background: #1a1a1a; color: #aaaaaa; font-family: Consolas, monospace; font-size: 10px; border: 1px solid #3c3c3c;");
+    traceHLayout->addWidget(m_traceArea, 1);
+
+    m_copyBtn = new QPushButton("Copy", traceWidget);
+    m_copyBtn->setToolTip("Copy connection trace to clipboard");
+    m_copyBtn->setStyleSheet("padding: 2px; font-size: 10px; height: 16px;");
+    connect(m_copyBtn, &QPushButton::clicked, this, [this]() {
+        if (m_traceArea) {
+            m_traceArea->selectAll();
+            m_traceArea->copy();
+            // optionally deselect after copy
+            auto cursor = m_traceArea->textCursor();
+            cursor.clearSelection();
+            m_traceArea->setTextCursor(cursor);
+        }
+    });
+    // Add copy button at the top of the hbox
+    auto* btnVLayout = new QVBoxLayout();
+    btnVLayout->addWidget(m_copyBtn);
+    btnVLayout->addStretch();
+    traceHLayout->addLayout(btnVLayout);
+
+    m_mainLayout->addWidget(traceWidget);
 
     m_mainLayout->addWidget(m_playerBar);
 

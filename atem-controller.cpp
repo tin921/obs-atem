@@ -37,6 +37,19 @@ HRESULT MacroPlayerCallback::Notify(
     return S_OK;
 }
 
+void AtemController::trace(const char* format, ...) {
+    char buf[1024];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buf, sizeof(buf), format, args);
+    va_end(args);
+
+    blog(LOG_INFO, "%s", buf);
+    if (m_onTrace) {
+        m_onTrace(std::string(buf));
+    }
+}
+
 // ── AtemController ───────────────────────────────────────────
 
 AtemController::AtemController() {
@@ -78,11 +91,11 @@ bool AtemController::connectIP(const std::string& address) {
 bool AtemController::connectToAddress(const std::string& address) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
-    blog(LOG_INFO, "[ATEM Macros] connectToAddress: '%s'", address.c_str());
+    trace("[ATEM Macros] connectToAddress: '%s'", address.c_str());
 
     if (!m_discovery) {
         m_lastError = "BMD SDK not available. Install ATEM Software Control.";
-        blog(LOG_ERROR, "[ATEM Macros] connectToAddress: no discovery object");
+        trace("[ATEM Macros] ERROR: no discovery object");
         return false;
     }
 
@@ -95,9 +108,9 @@ bool AtemController::connectToAddress(const std::string& address) {
     _bstr_t bstrAddr(address.c_str());
     BMDSwitcherConnectToFailure failReason = bmdSwitcherConnectToFailureNoResponse;
 
-    blog(LOG_INFO, "[ATEM Macros] connectToAddress: calling ConnectTo...");
+    trace("[ATEM Macros] calling ConnectTo...");
     HRESULT hr = m_discovery->ConnectTo(bstrAddr, &m_switcher, &failReason);
-    blog(LOG_INFO, "[ATEM Macros] connectToAddress: ConnectTo hr=0x%08X switcher=%p failReason=%d",
+    trace("[ATEM Macros] ConnectTo hr=0x%08X switcher=%p failReason=%d",
          (unsigned)hr, (void*)m_switcher, (int)failReason);
 
     if (FAILED(hr) || !m_switcher) {
@@ -113,7 +126,7 @@ bool AtemController::connectToAddress(const std::string& address) {
             m_lastError = "Connection failed (code: " + std::to_string(failReason) + ")";
             break;
         }
-        blog(LOG_ERROR, "[ATEM Macros] connectToAddress: failed - %s", m_lastError.c_str());
+        trace("[ATEM Macros] ERROR: %s", m_lastError.c_str());
         if (m_onStateChange) m_onStateChange(m_state);
         return false;
     }
@@ -124,33 +137,33 @@ bool AtemController::connectToAddress(const std::string& address) {
         _bstr_t nameWrapper(productName, false);
         m_modelName = static_cast<const char*>(nameWrapper);
     }
-    blog(LOG_INFO, "[ATEM Macros] connectToAddress: model='%s'", m_modelName.c_str());
+    trace("[ATEM Macros] model='%s'", m_modelName.c_str());
 
     // Get macro pool interface
-    blog(LOG_INFO, "[ATEM Macros] connectToAddress: getting MacroPool...");
+    trace("[ATEM Macros] getting MacroPool...");
     hr = m_switcher->QueryInterface(
         IID_IBMDSwitcherMacroPool,
         reinterpret_cast<void**>(&m_macroPool)
     );
-    blog(LOG_INFO, "[ATEM Macros] connectToAddress: MacroPool hr=0x%08X", (unsigned)hr);
+    trace("[ATEM Macros] MacroPool hr=0x%08X", (unsigned)hr);
     if (FAILED(hr)) {
         m_lastError = "Failed to get macro pool interface.";
-        blog(LOG_ERROR, "[ATEM Macros] connectToAddress: %s", m_lastError.c_str());
+        trace("[ATEM Macros] ERROR: %s", m_lastError.c_str());
         cleanup();
         if (m_onStateChange) m_onStateChange(m_state);
         return false;
     }
 
     // Get macro control interface
-    blog(LOG_INFO, "[ATEM Macros] connectToAddress: getting MacroControl...");
+    trace("[ATEM Macros] getting MacroControl...");
     hr = m_switcher->QueryInterface(
         IID_IBMDSwitcherMacroControl,
         reinterpret_cast<void**>(&m_macroControl)
     );
-    blog(LOG_INFO, "[ATEM Macros] connectToAddress: MacroControl hr=0x%08X", (unsigned)hr);
+    trace("[ATEM Macros] MacroControl hr=0x%08X", (unsigned)hr);
     if (FAILED(hr)) {
         m_lastError = "Failed to get macro control interface.";
-        blog(LOG_ERROR, "[ATEM Macros] connectToAddress: %s", m_lastError.c_str());
+        trace("[ATEM Macros] ERROR: %s", m_lastError.c_str());
         cleanup();
         if (m_onStateChange) m_onStateChange(m_state);
         return false;
@@ -164,7 +177,7 @@ bool AtemController::connectToAddress(const std::string& address) {
 
     m_state = AtemState::Connected;
     m_lastError.clear();
-    blog(LOG_INFO, "[ATEM Macros] connectToAddress: connected successfully");
+    trace("[ATEM Macros] connected successfully");
     if (m_onStateChange) m_onStateChange(m_state);
     return true;
 }

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(obs-atem-macros VERSION 1.0.0 LANGUAGES CXX)
+project(obs-atem VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -60,7 +60,7 @@ if(NOT ATEM_SDK_DIR)
 endif()
 
 # ── Plugin Target ────────────────────────────────────────────
-add_library(obs-atem-macros MODULE
+add_library(obs-atem MODULE
     plugin-main.cpp
     atem-controller.h
     atem-controller.cpp
@@ -71,7 +71,7 @@ add_library(obs-atem-macros MODULE
     bmd-guids.cpp
 )
 
-target_include_directories(obs-atem-macros PRIVATE
+target_include_directories(obs-atem PRIVATE
     ${OBS_INCLUDE_DIR}
     ${OBS_DIR}/UI/obs-frontend-api
     ${OBS_DIR}/frontend/api
@@ -79,7 +79,7 @@ target_include_directories(obs-atem-macros PRIVATE
     ${CMAKE_SOURCE_DIR}
 )
 
-target_link_libraries(obs-atem-macros PRIVATE
+target_link_libraries(obs-atem PRIVATE
     ${OBS_LIB}
     ${OBS_FRONTEND_LIB}
     ${QT_LIBS}
@@ -90,7 +90,7 @@ target_link_libraries(obs-atem-macros PRIVATE
 
 # ── Install ──────────────────────────────────────────────────
 # Copy to OBS plugin directory
-install(TARGETS obs-atem-macros
+install(TARGETS obs-atem
     LIBRARY DESTINATION "obs-plugins/64bit"
     RUNTIME DESTINATION "obs-plugins/64bit"
 )
