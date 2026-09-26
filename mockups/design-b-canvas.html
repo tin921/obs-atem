@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PiP Mockup B — Direct</title>
+<link rel="stylesheet" href="mockup.css">
+<style>
+  .modes { display: flex; border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
+  .modes button { flex: 1; border: 0; border-radius: 0; }
+  .modes button[aria-pressed="true"] { background: #094771; color: #fff; }
+  .top-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .top-row .on-air { width: auto; }
+
+  .preview { cursor: default; outline: none; }
+  .preview:focus-visible { box-shadow: 0 0 0 1px var(--red); }
+  .preview .pip { cursor: move; }
+  .preview.crop-mode .pip { cursor: default; }
+  .handle {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: #fff;
+    border: 1px solid #000;
+    transform: translate(-50%, -50%);
+    touch-action: none;
+  }
+  .handle.resize { cursor: nwse-resize; }
+  .handle.edge-l, .handle.edge-r { cursor: ew-resize; width: 6px; height: 16px; }
+  .handle.edge-t, .handle.edge-b { cursor: ns-resize; width: 16px; height: 6px; }
+  .hint { font-size: 10px; color: var(--muted); }
+
+  .nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 6px; }
+  .nums.crop { grid-template-columns: repeat(4, 1fr); }
+  .num { display: flex; flex-direction: column; gap: 1px; }
+  .num label { font-size: 10px; color: var(--muted); }
+  .num input { width: 100%; }
+  .more { width: 100%; padding: 5px 2px; }
+</style>
+</head>
+<body>
+<header class="page-title">
+  <h1>Design B — Direct manipulation</h1>
+  <p>The preview is the control: drag the PiP box to move it, drag its corner to resize, or switch
+     to Crop and drag its edges. Sources are one-click bus buttons like the ATEM's own panel.
+     Exact numbers sit in a compact grid below. Most visual; least scrolling.</p>
+  <nav><a href="index.html">All designs</a><a href="design-a-classic.html">Design A</a><a href="design-c-presets.html">Design C</a></nav>
+</header>
+
+<main class="page">
+  <div class="dock-frame" id="dock">
+    <div class="dock-title"><span>ATEM PiP</span><span>⧉ ✕</span></div>
+    <div class="panel">
+      <div id="header"></div>
+      <div id="offline" class="offline" hidden>
+        <p>ATEM not connected.<br>Connect here or from the ATEM Macros panel (⚙).</p>
+        <button class="primary" id="reconnect">Connect</button>
+      </div>
+      <div class="panel-body" id="body">
+        <div class="bus program" id="busMain"><span class="bus-label">MAIN</span></div>
+        <div class="bus pip" id="busPip"><span class="bus-label">PIP</span></div>
+
+        <div class="top-row">
+          <button class="on-air" id="onAir" aria-pressed="false">PiP OFF</button>
+          <div class="modes" role="group" aria-label="Drag mode">
+            <button id="modeMove" aria-pressed="true" title="Drag to move, corner to resize">Move</button>
+            <button id="modeCrop" aria-pressed="false">Crop</button>
+          </div>
+        </div>
+
+        <div class="warn" id="notDve" hidden>
+          Upstream key 1 is not a DVE key, so position and size have no effect.
+          <button id="makeDve">Set key type to DVE</button>
+        </div>
+
+        <div id="preview" tabindex="0" aria-label="PiP position. Arrow keys nudge, Shift for bigger steps."></div>
+        <div class="hint" id="hint"></div>
+
+        <div class="nums" id="numsDve"></div>
+        <label class="check"><input type="checkbox" id="cropOn"> Crop</label>
+        <div class="nums crop" id="numsCrop"></div>
+
+        <div class="btn-row">
+          <button id="resetDve">Reset position/size</button>
+          <button id="resetCrop">Reset crop</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bench" id="bench"></div>
+</main>
+
+<script src="pip-model.js"></script>
+<script>
+  const model = new PipModel();
+  const $ = (id) => document.getElementById(id);
+  renderHeader($('header'), model);
+  buildBench($('bench'), model, $('dock'));
+  const preview = createPreview($('preview'));
+  let mode = 'move';
+
+  // ── Bus buttons: the four HDMI inputs, everything else under "More" ──
+  function buildBus(el, field, filter) {
+    const buttons = [];
+    for (const input of EXTERNAL_INPUTS.filter(filter)) {
+      const b = document.createElement('button');
+      b.textContent = input.short;
+      b.title = input.name;
+      b.addEventListener('click', () => model.edit(field, input.id));
+      el.appendChild(b);
+      buttons.push([input.id, b]);
+    }
+    const more = document.createElement('select');
+    more.className = 'more';
+    more.setAttribute('aria-label', 'Other sources');
+    more.add(new Option('More…', ''));
+    for (const input of INPUTS.filter((i) => filter(i) && !EXTERNAL_INPUTS.includes(i)))
+      more.add(new Option(input.name, input.id));
+    more.addEventListener('change', () => { if (more.value) model.edit(field, Number(more.value)); });
+    el.appendChild(more);
+    return () => {
+      const current = model.get(field);
+      let onButton = false;
+      for (const [id, b] of buttons) {
+        b.setAttribute('aria-pressed', id === current);
+        onButton ||= id === current;
+      }
+      if (document.activeElement !== more) more.value = onButton ? '' : String(current);
+    };
+  }
+  const updateMainBus = buildBus($('busMain'), 'programInput', (i) => i.program);
+  const updatePipBus = buildBus($('busPip'), 'pipInput', (i) => i.pip);
+
+  // ── Numbers ──
+  const numberFields = [];
+  function addNumber(container, field, label) {
+    const l = LIMITS[field];
+    const wrap = document.createElement('div');
+    wrap.className = 'num';
+    const id = 'n-' + field;
+    wrap.innerHTML = `<label for="${id}">${label}</label><input type="number" id="${id}" step="${l.step * 10}">`;
+    const input = wrap.querySelector('input');
+    input.addEventListener('change', () => {
+      model.edit(field, Number(input.value));
+      if (field === 'sizeX') model.edit('sizeY', model.get('sizeX'));
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      e.preventDefault();
+      const step = e.shiftKey ? 1 : l.step * 10;
+      model.edit(field, model.get(field) + (e.key === 'ArrowUp' ? step : -step));
+      if (field === 'sizeX') model.edit('sizeY', model.get('sizeX'));
+      input.value = model.get(field).toFixed(l.decimals);
+    });
+    container.appendChild(wrap);
+    numberFields.push([field, input, l]);
+  }
+  addNumber($('numsDve'), 'positionX', 'X');
+  addNumber($('numsDve'), 'positionY', 'Y');
+  addNumber($('numsDve'), 'sizeX', 'Size');
+  addNumber($('numsCrop'), 'cropTop', 'Top');
+  addNumber($('numsCrop'), 'cropBottom', 'Bottom');
+  addNumber($('numsCrop'), 'cropLeft', 'Left');
+  addNumber($('numsCrop'), 'cropRight', 'Right');
+
+  // ── Handles on the preview ──
+  const handles = {};
+  for (const name of ['resize', 'edge-l', 'edge-r', 'edge-t', 'edge-b']) {
+    const h = document.createElement('div');
+    h.className = 'handle ' + name;
+    h.dataset.handle = name;
+    preview.root.appendChild(h);
+    handles[name] = h;
+  }
+
+  // Unit helpers: preview pixels ↔ switcher units (+Y up).
+  const toUnits = (e) => {
+    const r = preview.root.getBoundingClientRect();
+    return { x: ((e.clientX - r.left) / r.width) * FRAME.w - FRAME.w / 2,
+             y: FRAME.h / 2 - ((e.clientY - r.top) / r.height) * FRAME.h };
+  };
+  const crop = (s) => (s.cropEnabled ? s : { cropLeft: 0, cropRight: 0, cropTop: 0, cropBottom: 0 });
+
+  // Snap the visible box edges to the safe area and centre lines (Alt = off).
+  const SAFE_X = FRAME.w / 2 * 0.9, SAFE_Y = FRAME.h / 2 * 0.9, SNAP = 0.4;
+  function snapPosition(x, y, s) {
+    const c = crop(s);
+    const halfW = (FRAME.w / 2) * s.sizeX, halfH = (FRAME.h / 2) * s.sizeY;
+    const left = x - halfW + c.cropLeft * s.sizeX, right = x + halfW - c.cropRight * s.sizeX;
+    const top = y + halfH - c.cropTop * s.sizeY, bottom = y - halfH + c.cropBottom * s.sizeY;
+    if (Math.abs(left + SAFE_X) < SNAP) x += -SAFE_X - left;
+    else if (Math.abs(right - SAFE_X) < SNAP) x += SAFE_X - right;
+    else if (Math.abs(x) < SNAP) x = 0;
+    if (Math.abs(top - SAFE_Y) < SNAP) y += SAFE_Y - top;
+    else if (Math.abs(bottom + SAFE_Y) < SNAP) y += -SAFE_Y - bottom;
+    else if (Math.abs(y) < SNAP) y = 0;
+    return { x, y };
+  }
+
+  let drag = null;
+  preview.root.addEventListener('pointerdown', (e) => {
+    const s = model.state;
+    const handle = e.target.dataset.handle;
+    if (!handle && !(e.target === preview.pip && mode === 'move')) return;
+    e.preventDefault();
+    preview.root.setPointerCapture(e.pointerId);
+    preview.root.focus();
+    drag = { handle: handle || 'move', start: toUnits(e), from: { ...s } };
+    if (mode === 'crop' && !s.cropEnabled) model.edit('cropEnabled', true);
+  });
+  preview.root.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const p = toUnits(e);
+    const f = drag.from;
+    const c = crop(f);
+    if (drag.handle === 'move') {
+      let x = f.positionX + (p.x - drag.start.x);
+      let y = f.positionY + (p.y - drag.start.y);
+      if (!e.altKey) ({ x, y } = snapPosition(x, y, f));
+      model.editMany({ positionX: x, positionY: y });
+    } else if (drag.handle === 'resize') {
+      // Keep the visible top-left corner fixed, scale about it (aspect locked).
+      const tlX = f.positionX - (FRAME.w / 2) * f.sizeX + c.cropLeft * f.sizeX;
+      const tlY = f.positionY + (FRAME.h / 2) * f.sizeY - c.cropTop * f.sizeY;
+      const visibleW = FRAME.w - c.cropLeft - c.cropRight;
+      const size = Math.min(1, Math.max(0.05, (p.x - tlX) / visibleW));
+      model.editMany({
+        sizeX: size, sizeY: size,
+        positionX: tlX + (FRAME.w / 2) * size - c.cropLeft * size,
+        positionY: tlY - (FRAME.h / 2) * size + c.cropTop * size,
+      });
+    } else {
+      // Crop edges: distance from the uncropped box edge, in source units.
+      const s = f.sizeX || 1;
+      const boxL = f.positionX - (FRAME.w / 2) * f.sizeX, boxR = f.positionX + (FRAME.w / 2) * f.sizeX;
+      const boxT = f.positionY + (FRAME.h / 2) * f.sizeY, boxB = f.positionY - (FRAME.h / 2) * f.sizeY;
+      if (drag.handle === 'edge-l') model.edit('cropLeft', Math.max(0, (p.x - boxL) / s));
+      if (drag.handle === 'edge-r') model.edit('cropRight', Math.max(0, (boxR - p.x) / s));
+      if (drag.handle === 'edge-t') model.edit('cropTop', Math.max(0, (boxT - p.y) / f.sizeY));
+      if (drag.handle === 'edge-b') model.edit('cropBottom', Math.max(0, (p.y - boxB) / f.sizeY));
+    }
+  });
+  const endDrag = () => (drag = null);
+  preview.root.addEventListener('pointerup', endDrag);
+  preview.root.addEventListener('pointercancel', endDrag);
+
+  // Keyboard nudge when the preview has focus.
+  preview.root.addEventListener('keydown', (e) => {
+    const step = e.shiftKey ? 1 : 0.1;
+    const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
+    if (!moves[e.key]) return;
+    e.preventDefault();
+    model.editMany({ positionX: model.get('positionX') + moves[e.key][0], positionY: model.get('positionY') + moves[e.key][1] });
+  });
+
+  function placeHandles() {
+    const r = pipRect(model.state);
+    const at = (h, x, y, show) => Object.assign(h.style, { left: x + '%', top: y + '%', display: show ? 'block' : 'none' });
+    const move = mode === 'move' && model.state.isDVE, cropMode = mode === 'crop' && model.state.isDVE;
+    at(handles.resize, r.left + r.width, r.top + r.height, move);
+    at(handles['edge-l'], r.left, r.top + r.height / 2, cropMode);
+    at(handles['edge-r'], r.left + r.width, r.top + r.height / 2, cropMode);
+    at(handles['edge-t'], r.left + r.width / 2, r.top, cropMode);
+    at(handles['edge-b'], r.left + r.width / 2, r.top + r.height, cropMode);
+  }
+
+  function setMode(m) {
+    mode = m;
+    $('modeMove').setAttribute('aria-pressed', m === 'move');
+    $('modeCrop').setAttribute('aria-pressed', m === 'crop');
+    preview.root.classList.toggle('crop-mode', m === 'crop');
+    $('hint').textContent = m === 'move'
+      ? 'Drag the box to move (snaps to safe area, Alt = no snap). Drag the corner to resize. Arrow keys nudge.'
+      : 'Drag the white edge handles to crop.';
+    render();
+  }
+  $('modeMove').addEventListener('click', () => setMode('move'));
+  $('modeCrop').addEventListener('click', () => setMode('crop'));
+
+  $('onAir').addEventListener('click', () => model.edit('onAir', !model.get('onAir')));
+  $('makeDve').addEventListener('click', () => model.action('makeDVE'));
+  $('cropOn').addEventListener('change', (e) => model.edit('cropEnabled', e.target.checked));
+  $('resetDve').addEventListener('click', () => model.action('resetDVE'));
+  $('resetCrop').addEventListener('click', () => model.action('resetMask'));
+  $('reconnect').addEventListener('click', () => model.setConnected(true));
+
+  function render() {
+    const s = model.state;
+    $('offline').hidden = model.connected;
+    $('body').hidden = !model.connected;
+    if (!model.connected) return;
+    renderPreview(preview, model);
+    placeHandles();
+    updateMainBus();
+    updatePipBus();
+    $('onAir').setAttribute('aria-pressed', s.onAir);
+    $('onAir').textContent = s.onAir ? 'PiP ON AIR' : 'PiP OFF';
+    $('notDve').hidden = s.isDVE;
+    $('cropOn').checked = s.cropEnabled;
+    for (const [field, input, l] of numberFields) {
+      if (document.activeElement !== input) input.value = Number(s[field]).toFixed(l.decimals);
+    }
+  }
+  model.addEventListener('change', render);
+  new ResizeObserver(placeHandles).observe(preview.root);
+  setMode('move');
+</script>
+</body>
+</html>

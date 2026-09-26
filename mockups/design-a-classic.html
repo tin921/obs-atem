@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PiP Mockup A — Classic</title>
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body>
+<header class="page-title">
+  <h1>Design A — Classic stacked panel</h1>
+  <p>The current Qt skeleton (pip-dock.cpp) plus a live preview: grouped sections, every value as a
+     slider for quick moves and a number box for exact entry. Familiar and complete, but the
+     tallest of the three — expect to scroll in a short dock.</p>
+  <nav><a href="index.html">All designs</a><a href="design-b-canvas.html">Design B</a><a href="design-c-presets.html">Design C</a></nav>
+</header>
+
+<main class="page">
+  <div class="dock-frame" id="dock">
+    <div class="dock-title"><span>ATEM PiP</span><span>⧉ ✕</span></div>
+    <div class="panel">
+      <div id="header"></div>
+      <div id="offline" class="offline" hidden>
+        <p>ATEM not connected.<br>Connect here or from the ATEM Macros panel (⚙).</p>
+        <button class="primary" id="reconnect">Connect</button>
+      </div>
+      <div class="panel-body" id="body">
+        <div id="preview"></div>
+
+        <div class="group">
+          <span class="group-title">SOURCES</span>
+          <div class="field"><label for="main">Main</label><select id="main"></select></div>
+          <div class="field"><label for="pipIn">PiP</label><select id="pipIn"></select></div>
+          <button class="on-air" id="onAir" aria-pressed="false">PiP OFF</button>
+          <div class="warn" id="notDve" hidden>
+            Upstream key 1 is not a DVE key, so position and size have no effect.
+            <button id="makeDve">Set key type to DVE</button>
+          </div>
+        </div>
+
+        <div class="group" id="position"><span class="group-title">POSITION</span></div>
+
+        <div class="group" id="size">
+          <span class="group-title">SIZE</span>
+          <label class="check"><input type="checkbox" id="lock" checked> Keep aspect ratio</label>
+        </div>
+
+        <div class="group" id="crop">
+          <span class="group-title">CROP</span>
+          <label class="check"><input type="checkbox" id="cropOn"> Crop enabled</label>
+        </div>
+
+        <div class="btn-row">
+          <button id="resetDve">Reset position/size</button>
+          <button id="resetCrop">Reset crop</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bench" id="bench"></div>
+</main>
+
+<script src="pip-model.js"></script>
+<script>
+  const model = new PipModel();
+  const $ = (id) => document.getElementById(id);
+
+  renderHeader($('header'), model);
+  const preview = createPreview($('preview'));
+  buildBench($('bench'), model, $('dock'));
+
+  // Sources
+  for (const input of INPUTS) {
+    if (input.program) $('main').add(new Option(input.name, input.id));
+    if (input.pip) $('pipIn').add(new Option(input.name, input.id));
+  }
+  $('main').addEventListener('change', (e) => model.edit('programInput', Number(e.target.value)));
+  $('pipIn').addEventListener('change', (e) => model.edit('pipInput', Number(e.target.value)));
+  $('onAir').addEventListener('click', () => model.edit('onAir', !model.get('onAir')));
+  $('makeDve').addEventListener('click', () => model.action('makeDVE'));
+  $('reconnect').addEventListener('click', () => model.setConnected(true));
+
+  // Value rows
+  const rows = {};
+  const addRow = (groupId, field, label, before, onEdit) => {
+    rows[field] = createValueRow(model, field, label, onEdit);
+    const group = $(groupId);
+    group.insertBefore(rows[field].row, before ? group.querySelector(before) : null);
+  };
+  addRow('position', 'positionX', 'X');
+  addRow('position', 'positionY', 'Y');
+  // Keep Y in step with X while the aspect ratio is locked.
+  addRow('size', 'sizeX', 'Size', '.check', (v) => { if ($('lock').checked) model.edit('sizeY', v); });
+  addRow('size', 'sizeY', 'Height', '.check');
+  for (const [f, l] of [['cropTop', 'Top'], ['cropBottom', 'Bottom'], ['cropLeft', 'Left'], ['cropRight', 'Right']])
+    addRow('crop', f, l);
+
+  const lock = $('lock');
+  const applyLock = () => {
+    rows.sizeY.row.hidden = lock.checked;
+    rows.sizeX.setLabel(lock.checked ? 'Size' : 'Width');
+  };
+  lock.addEventListener('change', () => {
+    applyLock();
+    if (lock.checked) model.edit('sizeY', model.get('sizeX'));
+  });
+  applyLock();
+
+  $('cropOn').addEventListener('change', (e) => model.edit('cropEnabled', e.target.checked));
+  $('resetDve').addEventListener('click', () => model.action('resetDVE'));
+  $('resetCrop').addEventListener('click', () => model.action('resetMask'));
+
+  // The aspect lock follows the device only on (re)connect; afterwards it is the
+  // operator's. Checking it on every change would unlock it mid-edit, between
+  // the SetSizeX and SetSizeY echoes.
+  let syncLock = true;
+
+  function render(e) {
+    const s = model.state;
+    if (e && e.detail.source === 'connection') syncLock = true;
+    $('offline').hidden = model.connected;
+    $('body').hidden = !model.connected;
+    if (!model.connected) return;
+    renderPreview(preview, model);
+    if (document.activeElement !== $('main')) $('main').value = s.programInput;
+    if (document.activeElement !== $('pipIn')) $('pipIn').value = s.pipInput;
+    $('onAir').setAttribute('aria-pressed', s.onAir);
+    $('onAir').textContent = s.onAir ? 'PiP ON AIR' : 'PiP OFF';
+    $('notDve').hidden = s.isDVE;
+    $('cropOn').checked = s.cropEnabled;
+    for (const r of Object.values(rows)) r.update();
+    if (syncLock) {
+      lock.checked = Math.abs(s.sizeX - s.sizeY) <= 0.001;
+      applyLock();
+      syncLock = false;
+    }
+  }
+  model.addEventListener('change', render);
+  render();
+</script>
+</body>
+</html>

@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PiP Mockup C — Presets</title>
+<link rel="stylesheet" href="mockup.css">
+<style>
+  .on-air.big { font-size: 13px; padding: 10px; letter-spacing: 0.04em; }
+  .bus button { padding: 9px 0; font-size: 12px; }
+
+  .place { display: grid; grid-template-columns: 1fr 86px; gap: 8px; align-items: start; }
+  .grid9 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
+  .grid9 button { aspect-ratio: 16 / 9; padding: 0; position: relative; }
+  .grid9 button::after {
+    content: '';
+    position: absolute;
+    width: 30%;
+    height: 30%;
+    background: var(--pip);
+    border-radius: 1px;
+    left: var(--x);
+    top: var(--y);
+    opacity: 0.8;
+  }
+  .grid9 button[aria-pressed="true"] { border-color: var(--pip); background: #3a2a18; }
+  .sizes { display: flex; flex-direction: column; gap: 3px; }
+  .sizes button[aria-pressed="true"] { border-color: var(--pip); background: #3a2a18; color: #fff; }
+  .caption { font-size: 10px; color: var(--muted); margin: 2px 0 3px; }
+
+  details { border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; }
+  details > summary { cursor: pointer; font-size: 11px; font-weight: 600; color: var(--muted); padding: 2px 0; }
+  details[open] > summary { margin-bottom: 4px; }
+
+  .nudge { display: grid; grid-template-columns: repeat(3, 28px); grid-template-rows: repeat(3, 24px); gap: 2px; justify-content: center; margin: 4px 0; }
+  .nudge button { padding: 0; font-size: 11px; }
+  .nudge .n-up { grid-column: 2; grid-row: 1; }
+  .nudge .n-left { grid-column: 1; grid-row: 2; }
+  .nudge .n-right { grid-column: 3; grid-row: 2; }
+  .nudge .n-down { grid-column: 2; grid-row: 3; }
+  .nudge .n-step { grid-column: 2; grid-row: 2; font-size: 9px; color: var(--muted); }
+  .sub { font-size: 10px; font-weight: 600; color: var(--muted); margin: 6px 0 0; }
+</style>
+</head>
+<body>
+<header class="page-title">
+  <h1>Design C — Presets first</h1>
+  <p>Built for live operation: big bus buttons, a 3×3 placement grid and S / M / L sizes cover
+     most moves in one click. Sliders, exact numbers and a nudge pad live under
+     "Fine tune". Crop is one symmetric width/height pair, with separate edges under "Advanced".</p>
+  <nav><a href="index.html">All designs</a><a href="design-a-classic.html">Design A</a><a href="design-b-canvas.html">Design B</a></nav>
+</header>
+
+<main class="page">
+  <div class="dock-frame" id="dock">
+    <div class="dock-title"><span>ATEM PiP</span><span>⧉ ✕</span></div>
+    <div class="panel">
+      <div id="header"></div>
+      <div id="offline" class="offline" hidden>
+        <p>ATEM not connected.<br>Connect here or from the ATEM Macros panel (⚙).</p>
+        <button class="primary" id="reconnect">Connect</button>
+      </div>
+      <div class="panel-body" id="body">
+        <button class="on-air big" id="onAir" aria-pressed="false">PiP OFF</button>
+
+        <div class="bus program" id="busMain"><span class="bus-label">MAIN</span></div>
+        <div class="bus pip" id="busPip"><span class="bus-label">PIP</span></div>
+
+        <div class="warn" id="notDve" hidden>
+          Upstream key 1 is not a DVE key, so position and size have no effect.
+          <button id="makeDve">Set key type to DVE</button>
+        </div>
+
+        <div id="preview"></div>
+
+        <div class="place">
+          <div>
+            <div class="caption">Position</div>
+            <div class="grid9" id="grid9"></div>
+          </div>
+          <div>
+            <div class="caption">Size</div>
+            <div class="sizes" id="sizes"></div>
+          </div>
+        </div>
+
+        <details id="fine">
+          <summary>Fine tune</summary>
+          <div id="fineRows"></div>
+          <div class="nudge" aria-label="Nudge position">
+            <button class="n-up" data-dx="0" data-dy="1" aria-label="Nudge up">▲</button>
+            <button class="n-left" data-dx="-1" data-dy="0" aria-label="Nudge left">◀</button>
+            <button class="n-step" id="stepBtn" title="Nudge step (click to change)">0.1</button>
+            <button class="n-right" data-dx="1" data-dy="0" aria-label="Nudge right">▶</button>
+            <button class="n-down" data-dx="0" data-dy="-1" aria-label="Nudge down">▼</button>
+          </div>
+          <label class="check"><input type="checkbox" id="cropOn"> Crop</label>
+          <div id="cropSimple"></div>
+          <details id="advanced">
+            <summary>Advanced crop (separate edges)</summary>
+            <div id="cropAdvanced"></div>
+          </details>
+          <div class="btn-row" style="margin-top:6px">
+            <button id="resetDve">Reset position/size</button>
+            <button id="resetCrop">Reset crop</button>
+          </div>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <div class="bench" id="bench"></div>
+</main>
+
+<script src="pip-model.js"></script>
+<script>
+  const model = new PipModel();
+  const $ = (id) => document.getElementById(id);
+  renderHeader($('header'), model);
+  buildBench($('bench'), model, $('dock'));
+  const preview = createPreview($('preview'));
+
+  // ── Bus buttons: all four HDMI inputs, no dropdown (fast, big targets) ──
+  function buildBus(el, field) {
+    const buttons = EXTERNAL_INPUTS.map((input) => {
+      const b = document.createElement('button');
+      b.textContent = input.short;
+      b.title = input.name;
+      b.addEventListener('click', () => model.edit(field, input.id));
+      el.appendChild(b);
+      return [input.id, b];
+    });
+    return () => { for (const [id, b] of buttons) b.setAttribute('aria-pressed', id === model.get(field)); };
+  }
+  const updateMainBus = buildBus($('busMain'), 'programInput');
+  const updatePipBus = buildBus($('busPip'), 'pipInput');
+
+  // ── Placement presets ──
+  // The visible box sits MARGIN units inside the frame edge (≈ title-safe).
+  const MARGIN = 1.2;
+  const ANCHORS = [
+    ['Top left', -1, 1], ['Top', 0, 1], ['Top right', 1, 1],
+    ['Left', -1, 0], ['Centre', 0, 0], ['Right', 1, 0],
+    ['Bottom left', -1, -1], ['Bottom', 0, -1], ['Bottom right', 1, -1],
+  ];
+  function anchorPosition(ax, ay, s) {
+    const c = s.cropEnabled ? s : { cropLeft: 0, cropRight: 0, cropTop: 0, cropBottom: 0 };
+    const halfW = (FRAME.w / 2) * s.sizeX, halfH = (FRAME.h / 2) * s.sizeY;
+    // Offset of the visible box centre from the DVE centre, caused by crop.
+    const offX = ((c.cropLeft - c.cropRight) / 2) * s.sizeX;
+    const offY = ((c.cropBottom - c.cropTop) / 2) * s.sizeY;
+    const visHalfW = halfW - ((c.cropLeft + c.cropRight) / 2) * s.sizeX;
+    const visHalfH = halfH - ((c.cropTop + c.cropBottom) / 2) * s.sizeY;
+    const x = ax === 0 ? 0 : ax * (FRAME.w / 2 - MARGIN - visHalfW);
+    const y = ay === 0 ? 0 : ay * (FRAME.h / 2 - MARGIN - visHalfH);
+    return { positionX: x - offX, positionY: y - offY };
+  }
+  let anchor = null; // last preset used, so size changes keep the box in its corner
+  const gridButtons = ANCHORS.map(([label, ax, ay]) => {
+    const b = document.createElement('button');
+    b.setAttribute('aria-label', label);
+    b.title = label;
+    b.style.setProperty('--x', 35 + ax * 30 + '%');
+    b.style.setProperty('--y', 35 - ay * 30 + '%');
+    b.addEventListener('click', () => {
+      anchor = [ax, ay];
+      model.editMany(anchorPosition(ax, ay, model.state));
+    });
+    $('grid9').appendChild(b);
+    return [ax, ay, b];
+  });
+
+  const SIZES = [['S', 0.25], ['M', 0.33], ['L', 0.5]];
+  const sizeButtons = SIZES.map(([label, size]) => {
+    const b = document.createElement('button');
+    b.textContent = `${label} · ${Math.round(size * 100)}%`;
+    b.addEventListener('click', () => {
+      model.editMany({ sizeX: size, sizeY: size });
+      if (anchor) model.editMany(anchorPosition(anchor[0], anchor[1], model.state));
+    });
+    $('sizes').appendChild(b);
+    return [size, b];
+  });
+
+  // ── Fine tune ──
+  const rows = [];
+  const add = (container, field, label, onEdit) => {
+    const r = createValueRow(model, field, label, onEdit);
+    container.appendChild(r.row);
+    rows.push(r);
+    return r;
+  };
+  // Moving by hand drops the corner memory used by the size presets.
+  add($('fineRows'), 'positionX', 'X', () => (anchor = null));
+  add($('fineRows'), 'positionY', 'Y', () => (anchor = null));
+  add($('fineRows'), 'sizeX', 'Size', (v) => model.edit('sizeY', v));
+
+  // Nudge pad
+  const STEPS = [0.1, 0.5, 1];
+  let step = 0.1;
+  $('stepBtn').addEventListener('click', () => {
+    step = STEPS[(STEPS.indexOf(step) + 1) % STEPS.length];
+    $('stepBtn').textContent = step;
+  });
+  for (const b of document.querySelectorAll('.nudge [data-dx]')) {
+    b.addEventListener('click', () => {
+      anchor = null;
+      model.editMany({
+        positionX: model.get('positionX') + Number(b.dataset.dx) * step,
+        positionY: model.get('positionY') + Number(b.dataset.dy) * step,
+      });
+    });
+  }
+
+  // Symmetric crop: "Crop width" trims left and right equally, "Crop height" top and bottom.
+  // They are UI-only helpers; the switcher still gets the four mask values.
+  function symmetricRow(label, a, b, limitsField) {
+    const l = LIMITS[limitsField];
+    const row = document.createElement('div');
+    row.className = 'value-row';
+    const id = 'sym-' + a;
+    row.innerHTML = `<label for="${id}">${label}</label>` +
+      `<input type="range" aria-label="${label}" min="0" max="${l.slider[1] / 2}" step="${l.step}">` +
+      `<input type="number" id="${id}" min="0" max="${l.spin[1] / 2}" step="${l.step * 10}">`;
+    const [slider, num] = row.querySelectorAll('input');
+    let dragging = false;
+    slider.addEventListener('pointerdown', () => (dragging = true));
+    window.addEventListener('pointerup', () => (dragging = false));
+    const set = (v) => {
+      if (!model.get('cropEnabled')) model.edit('cropEnabled', true);
+      model.editMany({ [a]: v, [b]: v });
+    };
+    slider.addEventListener('input', () => { num.value = Number(slider.value).toFixed(2); set(Number(slider.value)); });
+    num.addEventListener('change', () => set(Number(num.value)));
+    $('cropSimple').appendChild(row);
+    return () => {
+      if (dragging || document.activeElement === num) return;
+      const v = (model.get(a) + model.get(b)) / 2;
+      slider.value = v;
+      num.value = v.toFixed(2);
+      row.title = model.get(a) !== model.get(b) ? 'Edges differ — see Advanced crop' : '';
+    };
+  }
+  const updateCropW = symmetricRow('Width', 'cropLeft', 'cropRight', 'cropLeft');
+  const updateCropH = symmetricRow('Height', 'cropTop', 'cropBottom', 'cropTop');
+  for (const [f, l] of [['cropTop', 'Top'], ['cropBottom', 'Bottom'], ['cropLeft', 'Left'], ['cropRight', 'Right']])
+    add($('cropAdvanced'), f, l);
+
+  $('onAir').addEventListener('click', () => model.edit('onAir', !model.get('onAir')));
+  $('makeDve').addEventListener('click', () => model.action('makeDVE'));
+  $('cropOn').addEventListener('change', (e) => model.edit('cropEnabled', e.target.checked));
+  $('resetDve').addEventListener('click', () => { anchor = null; model.action('resetDVE'); });
+  $('resetCrop').addEventListener('click', () => model.action('resetMask'));
+  $('reconnect').addEventListener('click', () => model.setConnected(true));
+
+  function render() {
+    const s = model.state;
+    $('offline').hidden = model.connected;
+    $('body').hidden = !model.connected;
+    if (!model.connected) return;
+    renderPreview(preview, model);
+    updateMainBus();
+    updatePipBus();
+    $('onAir').setAttribute('aria-pressed', s.onAir);
+    $('onAir').textContent = s.onAir ? '● PiP ON AIR' : 'PiP OFF — click to take on air';
+    $('notDve').hidden = s.isDVE;
+    $('cropOn').checked = s.cropEnabled;
+
+    for (const [ax, ay, b] of gridButtons) {
+      const p = anchorPosition(ax, ay, s);
+      const match = Math.abs(p.positionX - s.positionX) < 0.05 && Math.abs(p.positionY - s.positionY) < 0.05;
+      b.setAttribute('aria-pressed', match);
+    }
+    for (const [size, b] of sizeButtons)
+      b.setAttribute('aria-pressed', Math.abs(s.sizeX - size) < 0.005 && Math.abs(s.sizeY - size) < 0.005);
+
+    for (const r of rows) r.update();
+    updateCropW();
+    updateCropH();
+  }
+  model.addEventListener('change', (e) => {
+    // A move made elsewhere (ATEM Software Control, a macro) drops the corner memory.
+    if (e.detail.source === 'device') anchor = null;
+    render();
+  });
+  render();
+</script>
+</body>
+</html>
