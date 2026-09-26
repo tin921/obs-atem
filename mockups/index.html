@@ -3,38 +3,600 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PiP Panel Mockups</title>
+<title>ATEM PiP Panel</title>
 <link rel="stylesheet" href="mockup.css">
+<style>
+  .panel { position: relative; }
+
+  /* Camera buttons: picture background, label strip, lit = program red / PiP orange */
+  .bus { grid-template-columns: 34px repeat(4, 1fr); }
+  .cam {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    padding: 0;
+    overflow: hidden;
+    border: 2px solid var(--border);
+    border-radius: 3px;
+    background-color: #2d2d30;
+    background-size: cover;
+    background-position: center;
+  }
+  .cam span {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 14px;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.6);
+  }
+  .cam:hover { border-color: var(--border-hover); }
+  .bus.program .cam[aria-pressed="true"] { border-color: var(--red); }
+  .bus.program .cam[aria-pressed="true"] span { background: var(--red); }
+  .bus.pip .cam[aria-pressed="true"] { border-color: var(--pip); }
+  .bus.pip .cam[aria-pressed="true"] span { background: var(--pip); color: #1a1a1a; }
+
+  /* Presets on the left, preview + numbers on the right */
+  .stage { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 6px; align-items: start; }
+  .presets { display: flex; flex-direction: column; gap: 3px; }
+  .preset {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    padding: 0;
+    border: 1px dashed var(--border);
+    border-radius: 3px;
+    background: #181818 center / cover no-repeat;
+  }
+  .preset.filled { border-style: solid; }
+  .preset[aria-pressed="true"] { border: 2px solid var(--green); }
+  .preset .num {
+    position: absolute;
+    top: 1px;
+    left: 2px;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 12px;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.65);
+    padding: 0 3px;
+    border-radius: 2px;
+  }
+  .preset:not(.filled) .num { background: none; color: var(--faint); }
+
+  .preview .pip { cursor: move; }
+  .handle {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: #fff;
+    border: 1px solid #000;
+    transform: translate(-50%, -50%);
+    cursor: nwse-resize;
+    touch-action: none;
+  }
+  .preview:focus-visible { box-shadow: 0 0 0 1px var(--red); outline: none; }
+
+  .caption { font-size: 10px; color: var(--muted); margin: 4px 0 1px; }
+  .nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px 5px; }
+  .nums.crop { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .num { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .num label { font-size: 10px; color: var(--muted); }
+  .num input { width: 100%; }
+
+  .save-row { display: flex; gap: 5px; align-items: center; }
+  .save-row label { font-size: 11px; white-space: nowrap; }
+  .save-row select { flex: 1; min-width: 0; }
+
+  /* Settings overlay (the ⚙ page) */
+  .settings {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    background: var(--bg);
+    padding: 8px;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .settings-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: var(--text-strong); }
+  .settings p { margin: 0; color: var(--muted); font-size: 11px; }
+  .img-row { display: grid; grid-template-columns: 64px 1fr auto auto; gap: 6px; align-items: center; }
+  .img-row .thumb {
+    aspect-ratio: 16 / 9;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: #181818 center / cover no-repeat;
+  }
+  .file-btn {
+    display: inline-block;
+    background: var(--btn);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 5px 8px;
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .file-btn:hover { background: var(--btn-hover); border-color: var(--border-hover); }
+  .file-btn:focus-within { outline: 1px solid var(--red); }
+  .file-btn input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+
+  .notes { max-width: 1200px; margin: 0 auto; padding: 0 16px; }
+  .notes details { background: #1b1b1b; border: 1px solid #2c2c2c; border-radius: 6px; padding: 8px 12px; }
+  .notes summary { cursor: pointer; color: var(--text-strong); }
+  .notes li { margin: 3px 0; }
+</style>
 </head>
 <body>
 <header class="page-title">
-  <h1>ATEM PiP panel — layout mockups</h1>
-  <p>Three candidate layouts for the ATEM PiP dock. Each page shows the panel at dock size
-     (resize it with the Dock width slider), the SDK calls it would send, and buttons that simulate
-     changes made elsewhere — to check the panel follows the ATEM without fighting the operator.
-     Nothing here connects to a switcher. Value ranges match pip-dock.cpp and still need checking
-     on the real ATEM Mini.</p>
+  <h1>ATEM PiP panel — current layout</h1>
+  <p>Revised design B. Camera buttons pick the main picture and the PiP (press the lit PiP button to
+     take PiP off air). Drag the box on the preview to move it, drag its corner to resize, or type
+     exact numbers — the mouse wheel steps a focused number field. Crop is typed only and switches
+     on by itself when any edge is non-zero. Save the whole setup to one of the six buttons on the
+     left and recall it with one click.</p>
+  <nav><a href="drafts.html">Earlier drafts (A / B / C)</a></nav>
 </header>
 
-<div class="cards">
-  <article class="card">
-    <h2>A — Classic</h2>
-    <p>Grouped sections with a slider and number box for every value. Mirrors the current Qt
-       skeleton. Complete and predictable; the tallest layout.</p>
-    <a href="design-a-classic.html">Open design A →</a>
-  </article>
-  <article class="card">
-    <h2>B — Direct manipulation</h2>
-    <p>Drag the PiP box on the preview to move, resize and crop it. ATEM-style bus buttons for
-       sources, compact number grid for exact values.</p>
-    <a href="design-b-canvas.html">Open design B →</a>
-  </article>
-  <article class="card">
-    <h2>C — Presets first</h2>
-    <p>One-click 3×3 placement and S / M / L sizes for live use. Sliders, numbers, a nudge pad and
-       symmetric crop sit under "Fine tune".</p>
-    <a href="design-c-presets.html">Open design C →</a>
-  </article>
+<div class="notes">
+  <details>
+    <summary>How this maps to the panel, and open questions</summary>
+    <ul>
+      <li><b>MAIN</b> buttons: exactly one lit, the program camera. Pressing the lit one does nothing
+          (the program can't show "nothing"). If the program is not a camera (e.g. Black, bars), none are lit.</li>
+      <li><b>PIP</b> buttons: pressing an unlit one sets it as the PiP source and puts the PiP on air;
+          pressing the lit one takes the PiP off air. No separate on-air button.</li>
+      <li><b>Preset buttons</b>: store main camera, PiP camera, PiP on/off, X, Y, size and crop. The
+          thumbnail is a picture of the preview at save time (drawn from the camera pictures). In OBS it
+          could instead be a real frame of the ATEM video — see question 1.</li>
+      <li><b>⚙ settings</b>: a picture per camera, used on the MAIN and PIP buttons, in the preview and
+          therefore in the preset thumbnails. In the plugin these would be PNG file paths saved in the
+          plugin settings; here they are kept in this browser only.</li>
+      <li>Question 1 — preset thumbnails: picture composed from the camera PNGs (as here), or a real
+          frame grabbed from the ATEM's video source in OBS?</li>
+      <li>Question 2 — "macro button background": is that these preset buttons (as built here), or
+          should the ATEM Macros panel's buttons also get pictures (e.g. one PNG per macro)?</li>
+    </ul>
+  </details>
 </div>
+
+<main class="page">
+  <div class="dock-frame" id="dock">
+    <div class="dock-title"><span>ATEM PiP</span><span>⧉ ✕</span></div>
+    <div class="panel">
+      <div id="header"></div>
+      <div id="offline" class="offline" hidden>
+        <p>ATEM not connected.<br>Connect here or from the ATEM Macros panel (⚙).</p>
+        <button class="primary" id="reconnect">Connect</button>
+      </div>
+
+      <div class="panel-body" id="body">
+        <div class="bus program" id="busMain" role="group" aria-label="Main camera"><span class="bus-label">MAIN</span></div>
+        <div class="bus pip" id="busPip" role="group" aria-label="PiP camera"><span class="bus-label">PIP</span></div>
+
+        <div class="warn" id="notDve" hidden>
+          Upstream key 1 is not a DVE key, so position and size have no effect.
+          <button id="makeDve">Set key type to DVE</button>
+        </div>
+
+        <div class="stage">
+          <div class="presets" id="presets" role="group" aria-label="Saved presets"></div>
+          <div>
+            <div id="preview" tabindex="0" aria-label="PiP position. Drag to move, drag the corner to resize, arrow keys nudge."></div>
+            <div class="nums" id="numsDve"></div>
+            <div class="caption">Crop</div>
+            <div class="nums crop" id="numsCrop"></div>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button id="resetDve">Reset position/size</button>
+          <button id="resetCrop">Reset crop</button>
+        </div>
+
+        <div class="save-row">
+          <label for="slot">Save current to</label>
+          <select id="slot"></select>
+          <button id="save">Save</button>
+          <button id="clearSlot" title="Empty the selected button">Clear</button>
+        </div>
+      </div>
+
+      <div class="settings" id="settings" hidden>
+        <div class="settings-head">PiP settings <button id="closeSettings">Done</button></div>
+        <p>A picture for each camera. It is shown on the MAIN and PIP buttons, in the preview and in
+           the thumbnails of saved buttons. PNG, any size — shown as 16:9.</p>
+        <div id="imageRows"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bench" id="bench"></div>
+</main>
+
+<script src="pip-model.js"></script>
+<script>
+  const model = new PipModel();
+  const $ = (id) => document.getElementById(id);
+  const headerButtons = renderHeader($('header'), model, { settings: true });
+  buildBench($('bench'), model, $('dock'));
+  const preview = createPreview($('preview'));
+  const CAMS = EXTERNAL_INPUTS; // CAM 1–4 only
+  const PRESET_COUNT = 6;
+
+  // Value steps for arrow keys and the mouse wheel (Shift = ×10).
+  const STEP = { positionX: 0.1, positionY: 0.1, sizeX: 0.01, cropTop: 0.1, cropBottom: 0.1, cropLeft: 0.1, cropRight: 0.1 };
+  const CROP_FIELDS = ['cropTop', 'cropBottom', 'cropLeft', 'cropRight'];
+
+  const setIfChanged = (field, value) => { if (model.get(field) !== value) model.edit(field, value); };
+
+  // ── Camera buttons ──
+  function buildBus(el, kind) {
+    const buttons = CAMS.map((cam) => {
+      const b = document.createElement('button');
+      b.className = 'cam';
+      b.innerHTML = `<span>${cam.short}</span>`;
+      b.title = cam.name;
+      b.addEventListener('click', () => {
+        const s = model.state;
+        if (kind === 'main') {
+          setIfChanged('programInput', cam.id);
+        } else if (s.onAir && s.pipInput === cam.id) {
+          model.edit('onAir', false);          // lit PiP button: take PiP off air
+        } else {
+          setIfChanged('pipInput', cam.id);    // choose source, then show it
+          setIfChanged('onAir', true);
+        }
+      });
+      el.appendChild(b);
+      return [cam, b];
+    });
+    return () => {
+      const s = model.state;
+      for (const [cam, b] of buttons) {
+        const lit = kind === 'main' ? s.programInput === cam.id : s.onAir && s.pipInput === cam.id;
+        b.setAttribute('aria-pressed', lit);
+        const img = model.imageFor(cam.id);
+        b.style.backgroundImage = img ? `url("${img}")` : '';
+        b.style.backgroundColor = img ? '' : cam.color;
+      }
+    };
+  }
+  const updateMainBus = buildBus($('busMain'), 'main');
+  const updatePipBus = buildBus($('busPip'), 'pip');
+
+  // ── Number fields (arrow keys + mouse wheel while focused) ──
+  const numberFields = [];
+  function syncMask() {
+    // No crop checkbox: the mask is on whenever any edge is non-zero.
+    const on = CROP_FIELDS.some((f) => model.get(f) > 0);
+    setIfChanged('cropEnabled', on);
+  }
+  function commit(field, value) {
+    model.edit(field, value);
+    if (field === 'sizeX') model.edit('sizeY', model.get('sizeX')); // aspect ratio always kept
+    if (CROP_FIELDS.includes(field)) syncMask();
+  }
+  function addNumber(container, field, label) {
+    const l = LIMITS[field];
+    const wrap = document.createElement('div');
+    wrap.className = 'num';
+    wrap.innerHTML = `<label for="n-${field}">${label}</label><input type="number" id="n-${field}" step="${STEP[field]}">`;
+    const input = wrap.querySelector('input');
+    const show = () => (input.value = Number(model.get(field)).toFixed(l.decimals));
+    const nudge = (dir, big) => {
+      commit(field, model.get(field) + dir * STEP[field] * (big ? 10 : 1));
+      show();
+    };
+    input.addEventListener('change', () => commit(field, Number(input.value)));
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      e.preventDefault();
+      nudge(e.key === 'ArrowUp' ? 1 : -1, e.shiftKey);
+    });
+    input.addEventListener('wheel', (e) => {
+      if (document.activeElement !== input) return; // only the focused field reacts
+      e.preventDefault();
+      nudge(e.deltaY < 0 ? 1 : -1, e.shiftKey);
+    }, { passive: false });
+    container.appendChild(wrap);
+    numberFields.push([input, show]);
+  }
+  addNumber($('numsDve'), 'positionX', 'X');
+  addNumber($('numsDve'), 'positionY', 'Y');
+  addNumber($('numsDve'), 'sizeX', 'Size');
+  addNumber($('numsCrop'), 'cropTop', 'Top');
+  addNumber($('numsCrop'), 'cropBottom', 'Bottom');
+  addNumber($('numsCrop'), 'cropLeft', 'Left');
+  addNumber($('numsCrop'), 'cropRight', 'Right');
+
+  // ── Preview: drag to move, corner handle to resize ──
+  const handle = document.createElement('div');
+  handle.className = 'handle';
+  handle.dataset.handle = 'resize';
+  preview.root.appendChild(handle);
+
+  const toUnits = (e) => {
+    const r = preview.root.getBoundingClientRect();
+    return { x: ((e.clientX - r.left) / r.width) * FRAME.w - FRAME.w / 2,
+             y: FRAME.h / 2 - ((e.clientY - r.top) / r.height) * FRAME.h };
+  };
+  const cropOf = (s) => (s.cropEnabled ? s : { cropLeft: 0, cropRight: 0, cropTop: 0, cropBottom: 0 });
+
+  // Snap the visible box edges to the safe area and centre lines (Alt = off).
+  const SAFE_X = (FRAME.w / 2) * 0.9, SAFE_Y = (FRAME.h / 2) * 0.9, SNAP = 0.4;
+  function snapPosition(x, y, s) {
+    const c = cropOf(s);
+    const halfW = (FRAME.w / 2) * s.sizeX, halfH = (FRAME.h / 2) * s.sizeY;
+    const left = x - halfW + c.cropLeft * s.sizeX, right = x + halfW - c.cropRight * s.sizeX;
+    const top = y + halfH - c.cropTop * s.sizeY, bottom = y - halfH + c.cropBottom * s.sizeY;
+    if (Math.abs(left + SAFE_X) < SNAP) x += -SAFE_X - left;
+    else if (Math.abs(right - SAFE_X) < SNAP) x += SAFE_X - right;
+    else if (Math.abs(x) < SNAP) x = 0;
+    if (Math.abs(top - SAFE_Y) < SNAP) y += SAFE_Y - top;
+    else if (Math.abs(bottom + SAFE_Y) < SNAP) y += -SAFE_Y - bottom;
+    else if (Math.abs(y) < SNAP) y = 0;
+    return { x, y };
+  }
+
+  let drag = null;
+  preview.root.addEventListener('pointerdown', (e) => {
+    const isHandle = e.target === handle;
+    if (!isHandle && e.target !== preview.pip) return;
+    e.preventDefault();
+    preview.root.setPointerCapture(e.pointerId);
+    preview.root.focus();
+    drag = { resize: isHandle, start: toUnits(e), from: { ...model.state } };
+  });
+  preview.root.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const p = toUnits(e);
+    const f = drag.from;
+    if (!drag.resize) {
+      let x = f.positionX + (p.x - drag.start.x);
+      let y = f.positionY + (p.y - drag.start.y);
+      if (!e.altKey) ({ x, y } = snapPosition(x, y, f));
+      model.editMany({ positionX: x, positionY: y });
+      return;
+    }
+    // Resize about the visible top-left corner, aspect ratio kept.
+    const c = cropOf(f);
+    const tlX = f.positionX - (FRAME.w / 2) * f.sizeX + c.cropLeft * f.sizeX;
+    const tlY = f.positionY + (FRAME.h / 2) * f.sizeY - c.cropTop * f.sizeY;
+    const size = Math.min(1, Math.max(0.05, (p.x - tlX) / (FRAME.w - c.cropLeft - c.cropRight)));
+    model.editMany({
+      sizeX: size, sizeY: size,
+      positionX: tlX + (FRAME.w / 2) * size - c.cropLeft * size,
+      positionY: tlY - (FRAME.h / 2) * size + c.cropTop * size,
+    });
+  });
+  const endDrag = () => (drag = null);
+  preview.root.addEventListener('pointerup', endDrag);
+  preview.root.addEventListener('pointercancel', endDrag);
+  preview.root.addEventListener('keydown', (e) => {
+    const step = e.shiftKey ? 1 : 0.1;
+    const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
+    if (!moves[e.key]) return;
+    e.preventDefault();
+    model.editMany({ positionX: model.get('positionX') + moves[e.key][0], positionY: model.get('positionY') + moves[e.key][1] });
+  });
+
+  function placeHandle() {
+    const r = pipRect(model.state);
+    Object.assign(handle.style, {
+      left: r.left + r.width + '%',
+      top: r.top + r.height + '%',
+      display: model.state.isDVE ? 'block' : 'none',
+    });
+  }
+
+  // ── Presets ──
+  const PRESET_FIELDS = ['programInput', 'pipInput', 'onAir', 'positionX', 'positionY', 'sizeX', 'sizeY', ...CROP_FIELDS];
+  let presets = storeGet('pipMockup.presets') || [];
+  presets.length = PRESET_COUNT;
+
+  const imageCache = new Map();
+  function loadImage(url) {
+    if (!imageCache.has(url)) {
+      imageCache.set(url, new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = url;
+      }));
+    }
+    return imageCache.get(url);
+  }
+
+  // Draws an input (picture or placeholder) from a source region onto the canvas.
+  async function drawInput(ctx, input, src, dst) {
+    const url = model.imageFor(input.id);
+    if (url) {
+      const img = await loadImage(url);
+      ctx.drawImage(img, src.x * img.width, src.y * img.height, src.w * img.width, src.h * img.height, dst.x, dst.y, dst.w, dst.h);
+      return;
+    }
+    if (input.color === 'bars') {
+      const bars = ['#c0c0c0', '#c0c000', '#00c0c0', '#00c000', '#c000c0', '#c00000', '#0000c0'];
+      bars.forEach((c, i) => { ctx.fillStyle = c; ctx.fillRect(dst.x + (i * dst.w) / 7, dst.y, dst.w / 7 + 1, dst.h); });
+    } else {
+      ctx.fillStyle = input.color;
+      ctx.fillRect(dst.x, dst.y, dst.w, dst.h);
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.font = `bold ${Math.max(8, dst.h / 4)}px Segoe UI, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(input.short, dst.x + dst.w / 2, dst.y + dst.h / 2);
+  }
+
+  // A "screenshot" of the program as this panel would show it.
+  async function snapshotProgram() {
+    const W = 192, H = 108;
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    const s = model.state;
+    await drawInput(ctx, inputById(s.programInput), { x: 0, y: 0, w: 1, h: 1 }, { x: 0, y: 0, w: W, h: H });
+    if (s.onAir && s.isDVE) {
+      const r = pipRect(s);
+      const c = cropOf(s);
+      const src = { x: c.cropLeft / FRAME.w, y: c.cropTop / FRAME.h,
+                    w: (FRAME.w - c.cropLeft - c.cropRight) / FRAME.w, h: (FRAME.h - c.cropTop - c.cropBottom) / FRAME.h };
+      const dst = { x: (r.left / 100) * W, y: (r.top / 100) * H, w: (r.width / 100) * W, h: (r.height / 100) * H };
+      if (src.w > 0 && src.h > 0) await drawInput(ctx, inputById(s.pipInput), src, dst);
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+      ctx.strokeRect(dst.x + 0.5, dst.y + 0.5, dst.w - 1, dst.h - 1);
+    }
+    return canvas.toDataURL('image/jpeg', 0.85);
+  }
+
+  const presetButtons = [];
+  for (let i = 0; i < PRESET_COUNT; i++) {
+    const b = document.createElement('button');
+    b.className = 'preset';
+    b.innerHTML = `<span class="num">${i + 1}</span>`;
+    b.addEventListener('click', () => recallPreset(i));
+    $('presets').appendChild(b);
+    presetButtons.push(b);
+    $('slot').add(new Option(`Button ${i + 1}`, i));
+  }
+
+  function describe(p) {
+    const name = (id) => inputById(id).short;
+    return `Main ${name(p.programInput)} · PiP ${p.onAir ? name(p.pipInput) : 'off'} · ` +
+      `X ${p.positionX.toFixed(1)} Y ${p.positionY.toFixed(1)} · size ${p.sizeX.toFixed(2)}` +
+      (CROP_FIELDS.some((f) => p[f] > 0) ? ' · cropped' : '');
+  }
+
+  const CONTINUOUS = new Set(['positionX', 'positionY', 'sizeX', 'sizeY', ...CROP_FIELDS]);
+  function presetMatches(p) {
+    const s = model.state;
+    return PRESET_FIELDS.every((f) => (CONTINUOUS.has(f) ? Math.abs(s[f] - p[f]) < 0.005 : s[f] === p[f]));
+  }
+
+  async function savePreset(i) {
+    const p = Object.fromEntries(PRESET_FIELDS.map((f) => [f, model.get(f)]));
+    p.thumbnail = await snapshotProgram();
+    presets[i] = p;
+    if (!storeSet('pipMockup.presets', presets)) model.log('presets not saved (browser storage unavailable)', 'dev');
+    model.log(`panel: saved current setup to button ${i + 1}`, 'dev');
+    renderPresets();
+  }
+
+  function clearPreset(i) {
+    presets[i] = null;
+    storeSet('pipMockup.presets', presets);
+    renderPresets();
+  }
+
+  // Recall = send only what differs; PiP on-air last so it appears already in place.
+  function recallPreset(i) {
+    const p = presets[i];
+    if (!p || !model.connected) return;
+    for (const f of ['pipInput', 'programInput', 'positionX', 'positionY', 'sizeX', 'sizeY', ...CROP_FIELDS]) {
+      if (model.get(f) !== p[f]) model.edit(f, p[f]);
+    }
+    syncMask();
+    setIfChanged('onAir', p.onAir);
+  }
+
+  function renderPresets() {
+    presetButtons.forEach((b, i) => {
+      const p = presets[i];
+      b.classList.toggle('filled', !!p);
+      b.style.backgroundImage = p ? `url("${p.thumbnail}")` : '';
+      b.title = p ? `Button ${i + 1}: ${describe(p)}` : `Button ${i + 1} — empty. Use "Save current to" below.`;
+      b.setAttribute('aria-label', b.title);
+      b.setAttribute('aria-pressed', !!p && presetMatches(p));
+    });
+  }
+
+  $('save').addEventListener('click', () => savePreset(Number($('slot').value)));
+  $('clearSlot').addEventListener('click', () => clearPreset(Number($('slot').value)));
+
+  // ── Settings: one picture per camera ──
+  function toSixteenNine(file) {
+    // Scale/crop the chosen picture to 320×180 (cover) so it is cheap to store and draw.
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = reject;
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = reject;
+        img.onload = () => {
+          const W = 320, H = 180;
+          const canvas = document.createElement('canvas');
+          canvas.width = W;
+          canvas.height = H;
+          const scale = Math.max(W / img.width, H / img.height);
+          const w = img.width * scale, h = img.height * scale;
+          canvas.getContext('2d').drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
+          resolve(canvas.toDataURL('image/jpeg', 0.85));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  const imageRows = CAMS.map((cam) => {
+    const row = document.createElement('div');
+    row.className = 'img-row';
+    row.innerHTML = `<div class="thumb"></div><span>${cam.name}</span>` +
+      `<label class="file-btn">Choose PNG…<input type="file" accept=".png,image/png" data-cam="${cam.id}"></label>` +
+      `<button>Clear</button>`;
+    const input = row.querySelector('input');
+    input.addEventListener('change', async () => {
+      const file = input.files[0];
+      input.value = '';
+      if (!file) return;
+      try {
+        model.setImage(cam.id, await toSixteenNine(file));
+      } catch {
+        model.log(`could not read ${file.name}`, 'dev');
+      }
+    });
+    row.querySelector('button').addEventListener('click', () => model.setImage(cam.id, null));
+    $('imageRows').appendChild(row);
+    return [cam, row.querySelector('.thumb')];
+  });
+  function renderSettings() {
+    for (const [cam, thumb] of imageRows) {
+      const img = model.imageFor(cam.id);
+      thumb.style.backgroundImage = img ? `url("${img}")` : '';
+      thumb.style.backgroundColor = img ? '' : cam.color;
+    }
+  }
+  headerButtons.settings.addEventListener('click', () => { $('settings').hidden = false; $('closeSettings').focus(); });
+  $('closeSettings').addEventListener('click', () => { $('settings').hidden = true; headerButtons.settings.focus(); });
+
+  // ── Remaining controls ──
+  $('makeDve').addEventListener('click', () => model.action('makeDVE'));
+  $('resetDve').addEventListener('click', () => model.action('resetDVE'));
+  $('resetCrop').addEventListener('click', () => { model.action('resetMask'); syncMask(); });
+  $('reconnect').addEventListener('click', () => model.setConnected(true));
+
+  function render() {
+    $('offline').hidden = model.connected;
+    $('body').hidden = !model.connected;
+    renderSettings();
+    if (!model.connected) return;
+    renderPreview(preview, model);
+    placeHandle();
+    updateMainBus();
+    updatePipBus();
+    $('notDve').hidden = model.state.isDVE;
+    for (const [input, show] of numberFields) if (document.activeElement !== input) show();
+    renderPresets();
+  }
+  model.addEventListener('change', render);
+  new ResizeObserver(render).observe(preview.root);
+  render();
+</script>
 </body>
 </html>

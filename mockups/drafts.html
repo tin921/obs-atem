@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PiP Panel Drafts</title>
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body>
+<header class="page-title">
+  <h1>ATEM PiP panel — earlier drafts</h1>
+  <nav><a href="index.html">← Current layout (chosen: revised B)</a></nav>
+  <p>Three candidate layouts for the ATEM PiP dock. Each page shows the panel at dock size
+     (resize it with the Dock width slider), the SDK calls it would send, and buttons that simulate
+     changes made elsewhere — to check the panel follows the ATEM without fighting the operator.
+     Nothing here connects to a switcher. Value ranges match pip-dock.cpp and still need checking
+     on the real ATEM Mini.</p>
+</header>
+
+<div class="cards">
+  <article class="card">
+    <h2>A — Classic</h2>
+    <p>Grouped sections with a slider and number box for every value. Mirrors the current Qt
+       skeleton. Complete and predictable; the tallest layout.</p>
+    <a href="design-a-classic.html">Open design A →</a>
+  </article>
+  <article class="card">
+    <h2>B — Direct manipulation</h2>
+    <p>Drag the PiP box on the preview to move, resize and crop it. ATEM-style bus buttons for
+       sources, compact number grid for exact values.</p>
+    <a href="design-b-canvas.html">Open design B →</a>
+  </article>
+  <article class="card">
+    <h2>C — Presets first</h2>
+    <p>One-click 3×3 placement and S / M / L sizes for live use. Sliders, numbers, a nudge pad and
+       symmetric crop sit under "Fine tune".</p>
+    <a href="design-c-presets.html">Open design C →</a>
+  </article>
+</div>
+</body>
+</html>

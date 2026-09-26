@@ -46,7 +46,7 @@ const INPUTS = [
   { id: 1,    name: 'Camera 1',       short: 'CAM 1', color: '#35618f', program: true, pip: true },
   { id: 2,    name: 'Camera 2',       short: 'CAM 2', color: '#8f5a35', program: true, pip: true },
   { id: 3,    name: 'Camera 3',       short: 'CAM 3', color: '#3f7d4e', program: true, pip: true },
-  { id: 4,    name: 'Laptop',         short: 'PC',    color: '#6f4a8f', program: true, pip: true },
+  { id: 4,    name: 'Camera 4',       short: 'CAM 4', color: '#6f4a8f', program: true, pip: true },
   { id: 0,    name: 'Black',          short: 'BLK',   color: '#000000', program: true, pip: false },
   { id: 1000, name: 'Color Bars',     short: 'BARS',  color: 'bars',    program: true, pip: true },
   { id: 2001, name: 'Color 1',        short: 'COL1',  color: '#b03a48', program: true, pip: true },
@@ -59,9 +59,21 @@ function inputById(id) {
   return INPUTS.find((i) => i.id === id) || { id, name: 'Input ' + id, short: String(id), color: '#333' };
 }
 
-function paintInput(el, input) {
-  el.classList.toggle('bars', input.color === 'bars');
-  el.style.background = input.color === 'bars' ? '' : input.color;
+// Paints an input's picture (operator-chosen PNG) or its placeholder colour.
+function paintInput(el, input, image) {
+  el.classList.toggle('bars', !image && input.color === 'bars');
+  el.style.background = image || input.color === 'bars' ? '' : input.color;
+  el.style.backgroundImage = image ? `url("${image}")` : '';
+  el.style.backgroundSize = image ? 'cover' : '';
+  el.style.backgroundPosition = image ? 'center' : '';
+}
+
+// localStorage can be missing or throw (private mode, file:// policies).
+function storeGet(key) {
+  try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
+}
+function storeSet(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; }
 }
 
 function round(v, decimals) {
@@ -92,6 +104,19 @@ class PipModel extends EventTarget {
     };
     this.pending = new Map();
     this.flushTimer = null;
+    // input id → image data URL, chosen in the panel settings
+    this.images = storeGet('pipMockup.images') || {};
+  }
+
+  imageFor(id) {
+    return this.images[id] || null;
+  }
+
+  setImage(id, dataUrl) {
+    if (dataUrl) this.images[id] = dataUrl;
+    else delete this.images[id];
+    if (!storeSet('pipMockup.images', this.images)) this.log('images not saved (browser storage unavailable)', 'dev');
+    this.emit('images');
   }
 
   get(field) {
@@ -216,10 +241,12 @@ function renderPreview(preview, model) {
   const s = model.state;
   const main = inputById(s.programInput);
   const pip = inputById(s.pipInput);
-  paintInput(preview.main, main);
-  preview.main.textContent = main.name.toUpperCase();
-  paintInput(preview.pip, pip);
-  preview.pip.textContent = pip.short;
+  const mainImage = model.imageFor(main.id);
+  const pipImage = model.imageFor(pip.id);
+  paintInput(preview.main, main, mainImage);
+  preview.main.textContent = mainImage ? '' : main.name.toUpperCase();
+  paintInput(preview.pip, pip, pipImage);
+  preview.pip.textContent = pipImage ? '' : pip.short;
   const r = pipRect(s);
   Object.assign(preview.pip.style, {
     left: r.left + '%',
@@ -228,6 +255,15 @@ function renderPreview(preview, model) {
     height: r.height + '%',
     display: s.isDVE ? 'flex' : 'none',
   });
+  if (pipImage) {
+    // The box shows the cropped part of the full source picture: size the
+    // background to the uncropped box and shift it by the left/top crop.
+    const pw = preview.root.clientWidth, ph = preview.root.clientHeight;
+    const fullW = s.sizeX * pw, fullH = s.sizeY * ph;
+    const c = s.cropEnabled ? s : { cropLeft: 0, cropTop: 0 };
+    preview.pip.style.backgroundSize = `${fullW}px ${fullH}px`;
+    preview.pip.style.backgroundPosition = `${-(c.cropLeft / FRAME.w) * fullW}px ${-(c.cropTop / FRAME.h) * fullH}px`;
+  }
   preview.pip.classList.toggle('off-air', !s.onAir);
   preview.tag.textContent = s.onAir ? 'PROGRAM' : 'PROGRAM · PiP off air (outline shows where it would be)';
 }
@@ -286,11 +322,13 @@ function createValueRow(model, field, label, onEdit) {
 
 // ── Header ──────────────────────────────────────────────────
 
-function renderHeader(el, model) {
+// Returns the header's buttons; { settings: true } adds a ⚙ button.
+function renderHeader(el, model, options = {}) {
   el.className = 'panel-header';
   el.innerHTML =
     '<span class="dot" aria-hidden="true">●</span><span class="title">ATEM PIP</span>' +
-    '<span class="status"></span><button class="tool-btn" title="Reload PiP settings from the ATEM">⟳</button>';
+    '<span class="status"></span><button class="tool-btn" data-btn="reload" title="Reload PiP settings from the ATEM">⟳</button>' +
+    (options.settings ? '<button class="tool-btn" data-btn="settings" title="PiP settings">⚙</button>' : '');
   const dot = el.querySelector('.dot');
   const status = el.querySelector('.status');
   const update = () => {
@@ -299,6 +337,7 @@ function renderHeader(el, model) {
   };
   update();
   model.addEventListener('change', update);
+  return { reload: el.querySelector('[data-btn=reload]'), settings: el.querySelector('[data-btn=settings]') };
 }
 
 // ── Test bench (right-hand side of every mockup page) ───────
@@ -331,9 +370,11 @@ function buildBench(benchEl, model, dockFrame) {
   const deviceActions = [
     ['PiP → top-left', () => model.device({ positionX: -9.6, positionY: 5.1 }, 'PiP moved to top-left (ATEM Software Control)')],
     ['Main → Camera 3', () => model.device({ programInput: 3 }, 'program input changed to Camera 3')],
+    ['Main → Black', () => model.device({ programInput: 0 }, 'program input changed to Black (no camera button lit)')],
     ['PiP off air', () => model.device({ onAir: false }, 'key taken off air (hardware button)')],
     ['Size 0.5', () => model.device({ sizeX: 0.5, sizeY: 0.5 }, 'size set to 0.5 by a macro')],
     ['Crop on', () => model.device({ cropEnabled: true, cropLeft: 6, cropRight: 6 }, 'crop enabled, left/right 6')],
+    ['Crop off', () => model.device({ cropEnabled: false, cropLeft: 0, cropRight: 0, cropTop: 0, cropBottom: 0 }, 'crop reset')],
     ['Key not DVE', () => model.device({ isDVE: false }, 'upstream key changed to luma')],
     ['Drop / restore connection', () => model.setConnected(!model.connected)],
   ];
