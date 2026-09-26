@@ -159,8 +159,10 @@ button {
   font-size: 11px;
   cursor: pointer;
 }
-button:hover { background: var(--btn-hover); border-color: var(--border-hover); }
-button:active { background: var(--pressed); }
+/* background-color only: the background shorthand would also reset
+   background-size/position and blow up picture buttons on hover. */
+button:hover { background-color: var(--btn-hover); border-color: var(--border-hover); }
+button:active { background-color: var(--pressed); }
 button:focus-visible, select:focus-visible, input:focus-visible { outline: 1px solid var(--red); outline-offset: 0; }
 
 .tool-btn {
@@ -259,9 +261,10 @@ input[type="range"]:hover::-webkit-slider-thumb { background: #fff; }
 /* Bus buttons (ATEM style: program = red, PiP source = orange) */
 .bus { display: grid; grid-template-columns: 38px repeat(auto-fit, minmax(38px, 1fr)); gap: 3px; align-items: stretch; }
 .bus-label { font-size: 10px; font-weight: 600; color: var(--muted); align-self: center; }
-.bus button { padding: 6px 0; font-weight: 600; font-size: 11px; }
-.bus.program button[aria-pressed="true"] { background: var(--red); border-color: var(--red); color: #fff; }
-.bus.pip button[aria-pressed="true"] { background: var(--pip); border-color: var(--pip); color: #1a1a1a; }
+/* Text bus buttons (drafts). Picture buttons (.cam) style themselves. */
+.bus button:not(.cam) { padding: 6px 0; font-weight: 600; font-size: 11px; }
+.bus.program button:not(.cam)[aria-pressed="true"] { background-color: var(--red); border-color: var(--red); color: #fff; }
+.bus.pip button:not(.cam)[aria-pressed="true"] { background-color: var(--pip); border-color: var(--pip); color: #1a1a1a; }
 
 /* ── Program preview (simulated) ── */
 

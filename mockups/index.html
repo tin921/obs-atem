@@ -6,21 +6,25 @@
 <title>ATEM PiP Panel</title>
 <link rel="stylesheet" href="mockup.css">
 <style>
-  .panel { position: relative; }
+  .panel { position: relative; --pip-hover: rgba(224, 137, 43, 0.55); }
 
-  /* Camera buttons: picture background, label strip, lit = program red / PiP orange */
+  /* Picture buttons (cameras and presets). The border is always 2px so
+     hover/active only recolour it and never change the button's size. */
   .bus { grid-template-columns: 34px repeat(4, 1fr); }
-  .cam {
+  .cam, .preset {
     position: relative;
     aspect-ratio: 16 / 9;
     padding: 0;
     overflow: hidden;
-    border: 2px solid var(--border);
+    border: 2px solid transparent;
     border-radius: 3px;
     background-color: #2d2d30;
     background-size: cover;
     background-position: center;
+    background-repeat: no-repeat;
   }
+  .cam:hover, .preset:hover { border-color: var(--pip-hover); }
+  .cam[aria-pressed="true"], .preset[aria-pressed="true"] { border-color: var(--pip); }
   .cam span {
     position: absolute;
     left: 0;
@@ -32,25 +36,13 @@
     color: #fff;
     background: rgba(0, 0, 0, 0.6);
   }
-  .cam:hover { border-color: var(--border-hover); }
-  .bus.program .cam[aria-pressed="true"] { border-color: var(--red); }
-  .bus.program .cam[aria-pressed="true"] span { background: var(--red); }
-  .bus.pip .cam[aria-pressed="true"] { border-color: var(--pip); }
-  .bus.pip .cam[aria-pressed="true"] span { background: var(--pip); color: #1a1a1a; }
 
   /* Presets on the left, preview + numbers on the right */
   .stage { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 6px; align-items: start; }
   .presets { display: flex; flex-direction: column; gap: 3px; }
-  .preset {
-    position: relative;
-    aspect-ratio: 16 / 9;
-    padding: 0;
-    border: 1px dashed var(--border);
-    border-radius: 3px;
-    background: #181818 center / cover no-repeat;
-  }
-  .preset.filled { border-style: solid; }
-  .preset[aria-pressed="true"] { border: 2px solid var(--green); }
+  .preset { background-color: #181818; }
+  .preset:not(.filled) { border: 2px dashed #333; }
+  .preset:not(.filled):hover { border-color: var(--pip-hover); }
   .preset .num {
     position: absolute;
     top: 1px;
@@ -85,7 +77,7 @@
   .num label { font-size: 10px; color: var(--muted); }
   .num input { width: 100%; }
 
-  .save-row { display: flex; gap: 5px; align-items: center; }
+  .save-row { display: flex; gap: 5px; align-items: center; margin-top: 8px; }
   .save-row label { font-size: 11px; white-space: nowrap; }
   .save-row select { flex: 1; min-width: 0; }
 
@@ -136,7 +128,7 @@
   <p>Revised design B. Camera buttons pick the main picture and the PiP (press the lit PiP button to
      take PiP off air). Drag the box on the preview to move it, drag its corner to resize, or type
      exact numbers — the mouse wheel steps a focused number field. Crop is typed only and switches
-     on by itself when any edge is non-zero. Save the whole setup to one of the six buttons on the
+     on by itself when any edge is non-zero. Save the whole setup to one of the seven buttons on the
      left and recall it with one click.</p>
   <nav><a href="drafts.html">Earlier drafts (A / B / C)</a></nav>
 </header>
@@ -145,6 +137,8 @@
   <details>
     <summary>How this maps to the panel, and open questions</summary>
     <ul>
+      <li>Camera and preset buttons: orange border on hover and when active; the camera name
+          shows only while no picture is set.</li>
       <li><b>MAIN</b> buttons: exactly one lit, the program camera. Pressing the lit one does nothing
           (the program can't show "nothing"). If the program is not a camera (e.g. Black, bars), none are lit.</li>
       <li><b>PIP</b> buttons: pressing an unlit one sets it as the PiP source and puts the PiP on air;
@@ -155,10 +149,8 @@
       <li><b>⚙ settings</b>: a picture per camera, used on the MAIN and PIP buttons, in the preview and
           therefore in the preset thumbnails. In the plugin these would be PNG file paths saved in the
           plugin settings; here they are kept in this browser only.</li>
-      <li>Question 1 — preset thumbnails: picture composed from the camera PNGs (as here), or a real
+      <li>Open question — preset thumbnails: picture composed from the camera PNGs (as here), or a real
           frame grabbed from the ATEM's video source in OBS?</li>
-      <li>Question 2 — "macro button background": is that these preset buttons (as built here), or
-          should the ATEM Macros panel's buttons also get pictures (e.g. one PNG per macro)?</li>
     </ul>
   </details>
 </div>
@@ -189,19 +181,12 @@
             <div class="nums" id="numsDve"></div>
             <div class="caption">Crop</div>
             <div class="nums crop" id="numsCrop"></div>
+            <div class="save-row">
+              <label for="slot">Save current to</label>
+              <select id="slot"></select>
+              <button id="save">Save</button>
+            </div>
           </div>
-        </div>
-
-        <div class="btn-row">
-          <button id="resetDve">Reset position/size</button>
-          <button id="resetCrop">Reset crop</button>
-        </div>
-
-        <div class="save-row">
-          <label for="slot">Save current to</label>
-          <select id="slot"></select>
-          <button id="save">Save</button>
-          <button id="clearSlot" title="Empty the selected button">Clear</button>
         </div>
       </div>
 
@@ -225,7 +210,7 @@
   buildBench($('bench'), model, $('dock'));
   const preview = createPreview($('preview'));
   const CAMS = EXTERNAL_INPUTS; // CAM 1–4 only
-  const PRESET_COUNT = 6;
+  const PRESET_COUNT = 7;
 
   // Value steps for arrow keys and the mouse wheel (Shift = ×10).
   const STEP = { positionX: 0.1, positionY: 0.1, sizeX: 0.01, cropTop: 0.1, cropBottom: 0.1, cropLeft: 0.1, cropRight: 0.1 };
@@ -262,6 +247,7 @@
         const img = model.imageFor(cam.id);
         b.style.backgroundImage = img ? `url("${img}")` : '';
         b.style.backgroundColor = img ? '' : cam.color;
+        b.querySelector('span').hidden = !!img; // the picture identifies the camera
       }
     };
   }
@@ -488,12 +474,6 @@
     renderPresets();
   }
 
-  function clearPreset(i) {
-    presets[i] = null;
-    storeSet('pipMockup.presets', presets);
-    renderPresets();
-  }
-
   // Recall = send only what differs; PiP on-air last so it appears already in place.
   function recallPreset(i) {
     const p = presets[i];
@@ -510,14 +490,13 @@
       const p = presets[i];
       b.classList.toggle('filled', !!p);
       b.style.backgroundImage = p ? `url("${p.thumbnail}")` : '';
-      b.title = p ? `Button ${i + 1}: ${describe(p)}` : `Button ${i + 1} — empty. Use "Save current to" below.`;
+      b.title = p ? `Button ${i + 1}: ${describe(p)}` : `Button ${i + 1} — empty. Use "Save current to".`;
       b.setAttribute('aria-label', b.title);
       b.setAttribute('aria-pressed', !!p && presetMatches(p));
     });
   }
 
   $('save').addEventListener('click', () => savePreset(Number($('slot').value)));
-  $('clearSlot').addEventListener('click', () => clearPreset(Number($('slot').value)));
 
   // ── Settings: one picture per camera ──
   function toSixteenNine(file) {
@@ -577,8 +556,6 @@
 
   // ── Remaining controls ──
   $('makeDve').addEventListener('click', () => model.action('makeDVE'));
-  $('resetDve').addEventListener('click', () => model.action('resetDVE'));
-  $('resetCrop').addEventListener('click', () => { model.action('resetMask'); syncMask(); });
   $('reconnect').addEventListener('click', () => model.setConnected(true));
 
   function render() {
