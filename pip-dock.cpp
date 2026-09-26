@@ -204,11 +204,12 @@ void AtemPipDock::buildUI() {
     m_offlineText->setAlignment(Qt::AlignCenter);
     m_offlineText->setWordWrap(true);
     offLayout->addWidget(m_offlineText);
-    auto* connectBtn = new QPushButton("Connect", m_offlinePage);
-    connectBtn->setObjectName("primaryBtn");
-    connectBtn->setToolTip("Connect the same way as last time (USB or IP)");
-    connect(connectBtn, &QPushButton::clicked, this, [this]() { m_session->autoConnect(); });
-    offLayout->addWidget(connectBtn);
+    // Same connection as the macro panel: reconnects the way it last
+    // succeeded (USB auto-detect unless an IP was used). The label says which.
+    m_connectBtn = new QPushButton(m_offlinePage);
+    m_connectBtn->setObjectName("primaryBtn");
+    connect(m_connectBtn, &QPushButton::clicked, this, [this]() { m_session->autoConnect(); });
+    offLayout->addWidget(m_connectBtn);
     m_pages->addWidget(m_offlinePage);
 
     m_controlsPage = buildControlsPage();
@@ -540,7 +541,13 @@ void AtemPipDock::refreshFromDevice() {
     bool onSettings = m_pages->currentWidget() == m_settingsPage;
 
     if (!m_session->isConnected()) {
-        m_offlineText->setText("ATEM not connected.\nConnect here or from the ATEM Macros panel (⚙).");
+        QString error = QString::fromStdString(m_session->atem().lastError());
+        m_offlineText->setText("ATEM not connected." + (error.isEmpty() ? QString() : "\n" + error) +
+                               "\nFor a different IP address use the ATEM Macros panel (⚙).");
+        m_connectBtn->setText(m_session->lastWasIP()
+            ? QString("Connect to %1").arg(m_session->lastIP())
+            : QString("Connect via USB (auto-detect)"));
+        m_connectBtn->setVisible(true);
         if (!onSettings) m_pages->setCurrentWidget(m_offlinePage);
         return;
     }
@@ -549,6 +556,7 @@ void AtemPipDock::refreshFromDevice() {
     AtemPipState s = pip.state();
     if (!s.available) {
         m_offlineText->setText("This switcher has no upstream keyer, so PiP is not available.");
+        m_connectBtn->setVisible(false);
         if (!onSettings) m_pages->setCurrentWidget(m_offlinePage);
         return;
     }

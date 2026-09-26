@@ -35,6 +35,12 @@ const char* obs_module_description(void) {
     return "Dockable panels to trigger Blackmagic ATEM macros and control picture-in-picture";
 }
 
+// Text from data/locale/<lang>.ini, or the fallback if the file is missing.
+static const char* text(const char* key, const char* fallback) {
+    const char* out = nullptr;
+    return obs_module_get_string(key, &out) ? out : fallback;
+}
+
 static void addDock(QMainWindow* mainWindow, const char* id, const char* title, QWidget* panel) {
 #if LIBOBS_API_MAJOR_VER >= 30
     // OBS wraps the widget in its own dock, lists it under Docks and saves
@@ -80,8 +86,8 @@ bool obs_module_load(void) {
 
     session = new AtemSession();
 
-    addDock(mainWindow, "AtemMacroDock", "ATEM Macros", new AtemMacroDock(session));
-    addDock(mainWindow, "AtemPipDock", "ATEM PiP", new AtemPipDock(session));
+    addDock(mainWindow, "AtemMacroDock", text("ATEM.MacrosDock", "ATEM Macros"), new AtemMacroDock(session));
+    addDock(mainWindow, "AtemPipDock", text("ATEM.PipDock", "ATEM PiP"), new AtemPipDock(session));
 
     obs_frontend_add_event_callback(frontend_event_handler, nullptr);
 

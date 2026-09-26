@@ -97,6 +97,7 @@ private:
     QStackedWidget* m_pages = nullptr;
     QWidget*        m_offlinePage = nullptr;
     QLabel*         m_offlineText = nullptr;
+    QPushButton*    m_connectBtn = nullptr;
     QWidget*        m_controlsPage = nullptr;
     QWidget*        m_settingsPage = nullptr;
 

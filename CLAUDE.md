@@ -117,7 +117,9 @@ obs-atem/
 ├── harness/main.cpp            # atem-harness: both panels + "ATEM log" dock (SDK calls)
 ├── cli/main.cpp                # atem-cli: info | pip | run N | stop [--ip ADDR]
 ├── mockups/                    # index.html = PiP layout reference; drafts.html = earlier A/B/C
-└── scripts/gen-obs-libs.ps1    # Generates obs.lib / obs-frontend-api.lib into build\
+├── data/locale/en-US.ini       # Plugin text (dock titles via obs_module_get_string)
+├── scripts/gen-obs-libs.ps1    # Generates obs.lib / obs-frontend-api.lib into build\
+└── scripts/deploy.ps1          # Copies the plugin to %ProgramData%\obs-studio\plugins\obs-atem
 ```
 
 ## ATEM connection details
@@ -287,9 +289,14 @@ cmake --build build --config Release
 ### Install
 
 ```powershell
-# Run as Administrator:
-copy build\Release\obs-atem.dll "C:\Program Files\obs-studio\obs-plugins\64bit\"
+# OBS closed; no Administrator needed:
+powershell -ExecutionPolicy Bypass -File scripts\deploy.ps1
 ```
+
+Deploys to `C:\ProgramData\obs-studio\plugins\obs-atem\{bin\64bit,data}` — OBS
+28+ on Windows loads per-machine plugins from there (OBSBasic.cpp,
+GetProgramDataPath "obs-studio/plugins/%module%"). `data\locale\en-US.ini`
+must exist and be non-empty or OBS logs "Failed to load 'en-US' text".
 
 ## Runtime requirements (on the streaming PC)
 
@@ -341,9 +348,13 @@ command above as Administrator.
   version matching above)
 - OBS 32.2.2, Qt 6.11.1 and ATEM Software Control 10.2.1 installed
   (2026-09-26); plugin, harness and CLI build against Qt 6.11.1
-- NEXT STEPS: regenerate the OBS import libs from 32.2.2; run `atem-cli`
-  against the ATEM; verify PiP value ranges and the +Y direction; try both
-  panels in atem-harness, then in OBS
+- 2026-09-26: plugin loaded in OBS 32.2.2 (Qt 6.11.1 runtime = compiled),
+  both docks shown; with the ATEM Mini on USB it connected ("ATEM Mini",
+  PiP key/fly/dve found, 14 inputs) and the PiP panel read live values
+  (Color 1 on program, CAM 1 PiP on air at X -8, Y -4.55, size 0.5 — a
+  flush bottom-left box, consistent with edges at X ±16 / Y ±9, +Y up)
+- NEXT STEPS: confirm on the ATEM output that the PiP really is bottom-left;
+  exercise camera buttons, drag, numbers, presets and macros on hardware
 
 ### SDK signature notes
 
