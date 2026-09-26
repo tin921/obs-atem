@@ -1,9 +1,15 @@
-# OBS ATEM Macro Panel — C++ Plugin
+# OBS ATEM Panels — C++ Plugin
 
 ## What this is
-A native C++ OBS Studio plugin that adds a dockable Qt panel for triggering
-Blackmagic ATEM Mini macros directly via USB using the BMDSwitcherAPI COM SDK.
-No middleware server, no browser dock, no external process.
+A native C++ OBS Studio plugin that adds dockable Qt panels for a Blackmagic
+ATEM Mini, talking to it directly (USB or Ethernet) through the BMDSwitcherAPI
+COM SDK. No middleware server, no browser dock, no external process.
+
+- **ATEM Macros** panel — trigger the macros stored on the ATEM
+- **ATEM PiP** panel (in development) — main input, PiP input, and the
+  position/size/crop of the PiP box
+
+The plugin is developed and tested against the real ATEM device only.
 
 ## Why C++ was selected
 
@@ -29,115 +35,177 @@ This is a hard constraint from OBS, not a preference.
 ## Architecture
 
 ```
-┌─────────────────────────────────────────┐
-│            OBS Studio                   │
-│  ┌───────────────────────────────────┐  │
-│  │   ATEM Macro Dock (Qt)            │  │
-│  │  ┌─────┐ ┌─────┐ ┌─────┐          │  │
-│  │  │ M1  │ │ M2  │ │ M3  │   *      │  │
-│  │  └─────┘ └─────┘ └─────┘          │  │
-│  └───────────┬───────────────────────┘  │
-│              │ COM / USB                │
-│              ▼                          │
-│     BMDSwitcherAPI.dll                  │
-└──────────────┬──────────────────────────┘
-               │ USB virtual ethernet (production)
-               │ or UDP 127.0.0.1:9910 (dev/testing)
-               │
-       ┌───────┴────────────────────────┐
-       │                                │
-┌──────▼──────┐              ┌──────────▼──────────┐
-│  ATEM Mini  │              │  atem-simulator/    │
-│  (macros)   │              │  run.py             │
-└─────────────┘              │  (pure Python stub) │
-                             └─────────────────────┘
+┌──────────────────────────────────────────────┐
+│                 OBS Studio                   │
+│  ┌──────────────────┐  ┌──────────────────┐  │
+│  │  AtemMacroDock   │  │  AtemPipDock     │  │
+│  │  (QWidget)       │  │  (QWidget)       │  │
+│  └────────┬─────────┘  └─────────┬────────┘  │
+│           └──────────┬───────────┘           │
+│                      ▼                       │
+│   AtemSession (QObject) — one shared         │
+│   connection; SDK callbacks → Qt signals     │
+│                      ▼                       │
+│   AtemController (macros)  +  AtemPip (PiP)  │
+│   Qt-free, also used by atem-cli             │
+│                      │  COM                  │
+│                      ▼                       │
+│             BMDSwitcherAPI64.dll             │
+└──────────────────────┬───────────────────────┘
+                       │  USB or Ethernet
+                       ▼
+                ┌─────────────┐
+                │  ATEM Mini  │
+                └─────────────┘
 ```
+
+- Panels are plain `QWidget`s. On OBS 30+ `obs_frontend_add_dock_by_id`
+  wraps them in OBS's own dock (OBS owns and destroys them); older OBS and the
+  harness wrap them in a `QDockWidget`. The version check uses
+  `LIBOBS_API_MAJOR_VER` — do NOT use `OBS_VERSION`: the obsconfig.h stub does
+  not define it, so it silently evaluated to 0 and forced the legacy path.
+- `AtemSession` is created in `obs_module_load`, auto-connects on
+  `OBS_FRONTEND_EVENT_FINISHED_LOADING`, calls `shutdown()` (releases all COM
+  objects) on `OBS_FRONTEND_EVENT_EXIT`, and is deleted in `obs_module_unload`.
+- The last connection mode (USB/IP) and IP are stored with QSettings under
+  `HKCU\Software\obs-atem\obs-atem`.
+
+### Threading rules
+
+- BMD SDK callbacks arrive on SDK threads. `AtemSession` marshals every one to
+  the UI thread with `QMetaObject::invokeMethod(..., Qt::QueuedConnection)`;
+  panels only ever see Qt signals.
+- PiP change notifications are coalesced (one `pipChanged` per event-loop
+  pass) because slider drags produce bursts of fly/mask events.
+- `ConnectTo` blocks the UI thread and the controller holds its (non-recursive)
+  mutex meanwhile. The SDK may pump messages during that call, so Qt timers can
+  fire re-entrantly: every timer/slot that calls into the controller must bail
+  out while `AtemSession::isBusy()` is true.
+- Connection loss: the `IBMDSwitcherCallback` "disconnected" event →
+  `AtemController::handleConnectionLost()` on the UI thread → panels show
+  "Connection to the ATEM was lost." with a reconnect button.
 
 ## File structure
 
 ```
 obs-atem/
-├── CMakeLists.txt              # Build config (OBS SDK + BMD SDK + Qt6)
-├── CLAUDE.md                   # This file
-├── README.md                   # User-facing setup/install docs
-├── atem-simulator/
-│   ├── README.md               # Overview and workflow for both tools
-│   ├── run.py                  # ATEM Mini UDP protocol emulator (pure Python stdlib)
-│   ├── run.py.md               # How run.py works, macro file format, connecting clients
-│   ├── capture.py              # Connects to real ATEM, captures full session with hex logging
-│   └── capture.py.md           # The 6-step capture process and how to use the log
-├── plugin-main.cpp             # OBS plugin entry point, registers dock
-├── atem-controller.h/cpp       # BMD COM SDK wrapper
-│                               #   - USB auto-detect and IP connection
-│                               #   - Macro enumeration (name, index, desc)
-│                               #   - Macro run/stop
-│                               #   - Callback for state changes
-│                               #   - trace() helper with callback for in-dock log
-├── macro-dock.h/cpp            # Qt QDockWidget
-│                               #   - 2-column macro button grid
-│                               #   - OBS dark theme styling
-│                               #   - Running macro indicator (green highlight)
-│                               #   - Bottom player bar with stop button
-│                               #   - Auto-connects via USB on startup
-│                               #   - Trace log panel (80px, timestamped, copyable)
-└── settings-dialog.h/cpp       # Gear icon (⚙) dialog
-                                #   - Connection status (model, address, macro count)
-                                #   - Connect via USB or manual IP
-                                #   - Troubleshooting checklist and last error
+├── CMakeLists.txt              # Targets: obs-atem (plugin), atem-harness, atem-cli
+├── CLAUDE.md / README.md / CONTRIBUTING.md
+├── plugin-main.cpp             # OBS entry: creates AtemSession, registers both docks
+├── atem-controller.h/cpp       # BMD SDK wrapper (Qt-free)
+│                               #   - USB auto-detect / IP connect, failure reasons
+│                               #   - Macro enumeration, run/stop, run status
+│                               #   - Switcher "disconnected" callback
+│                               #   - Owns AtemPip, attaches it on connect
+├── atem-pip.h/cpp              # BMD SDK wrapper for PiP (Qt-free)
+│                               #   - Input list (program- and key-fill-capable)
+│                               #   - M/E 1 program input, upstream key 1 fill/on-air/type
+│                               #   - Fly params (position/size), DVE mask (crop)
+├── bmd-util.h                  # BmdCallback<Iface, Args...> COM sink template,
+│                               #   bmdRelease, BSTR <-> UTF-8 helpers
+├── atem-session.h/cpp          # Shared connection + Qt signals + saved settings
+├── panel-common.h/cpp          # Shared stylesheet + PanelHeader (status dot, title)
+├── macro-dock.h/cpp            # ATEM Macros panel (connect view, grid, player bar, trace log)
+├── pip-dock.h/cpp              # ATEM PiP panel skeleton + PipValueControl (slider + spin box)
+├── settings-dialog.h/cpp       # ⚙ dialog: status, USB/IP connect, troubleshooting
+├── obs-log.h                   # blog(): libobs inside OBS, stderr elsewhere
+├── harness/main.cpp            # atem-harness: panels in a bare QMainWindow
+├── cli/main.cpp                # atem-cli: info | pip | run N | stop [--ip ADDR]
+├── mockups/                    # HTML/JS layout prototypes for the PiP panel
+└── scripts/gen-obs-libs.ps1    # Generates obs.lib / obs-frontend-api.lib into build\
 ```
 
 ## ATEM connection details
 
-- The ATEM Mini connects via USB, which creates a virtual ethernet adapter
-  on the host PC. The ATEM sits at its configured IP (default 192.168.10.240)
-  over this virtual network.
-- The BMDSwitcherAPI.dll is a COM library installed with ATEM Software Control
+- USB: `ConnectTo("")` — the SDK auto-detects a USB-connected ATEM.
+  Ethernet: `ConnectTo("<ip>")`. The user's ATEM is at 192.168.10.240.
+- The BMDSwitcherAPI64.dll COM library is installed with ATEM Software Control
   at C:\Program Files (x86)\Blackmagic Design\Blackmagic ATEM Switchers\
 - The SDK headers (BMDSwitcherAPI.h) must be downloaded separately from
   https://www.blackmagicdesign.com/developer/products/atem/sdk-and-software
+  The SDK manual is `Blackmagic Switchers SDK.pdf` in the SDK root folder.
 - Multiple clients can connect to the ATEM simultaneously — having ATEM
   Software Control open alongside OBS is fine.
 - Macros are stored on the ATEM hardware, not in software. Record/edit them
   in ATEM Software Control; this plugin reads and triggers them by index.
 - The ATEM Software Control app does NOT need to be running for the SDK to work.
 
+## PiP on the ATEM Mini
+
+The ATEM Mini has no SuperSource. PiP = upstream key 1 of M/E 1 as a DVE key:
+
+| Panel control | SDK call |
+|---|---|
+| Main input | `IBMDSwitcherMixEffectBlock::SetProgramInput` (hard cut) |
+| PiP input | `IBMDSwitcherKey::SetInputFill` |
+| PiP on/off | `IBMDSwitcherKey::SetOnAir` |
+| Key type must be DVE | `IBMDSwitcherKey::SetType(bmdSwitcherKeyTypeDVE)` |
+| Position X/Y, size X/Y | `IBMDSwitcherKeyFlyParameters::SetPositionX/Y`, `SetSizeX/Y` |
+| Size > 1.0 allowed? | `IBMDSwitcherKeyFlyParameters::GetCanScaleUp` |
+| Crop T/B/L/R + enable | `IBMDSwitcherKeyDVEParameters::SetMaskTop/...`, `SetMasked` |
+| Reset | `IBMDSwitcherKeyFlyParameters::ResetDVE`, `IBMDSwitcherKeyDVEParameters::ResetMask` |
+
+In SDK 10.2.1 position/size live on the *fly* parameters interface, not the
+DVE parameters interface (the manual: "most properties in this interface also
+take effect when the key type is set to DVE").
+
+The SDK manual gives **no numeric ranges**. The slider/spin limits in
+`pip-dock.cpp` (X ±16, Y ±9 on screen; crop T/B 0–18, L/R 0–32 on sliders)
+are ATEM Software Control's 16:9 values and MUST be checked against the real
+device (`atem-cli pip` prints the live values).
+
+The panel layout is not final: pick one of the `mockups/` designs, then apply
+it to `pip-dock.cpp`.
+
 ## Build requirements (Windows only)
 
-- Visual Studio 2022 Community 17.14.28 (Desktop development with C++)
-- CMake 3.28.1
-- Git 2.43.0
-- Qt 6.11.0 MSVC 2022 64-bit
-- OBS Studio source (for plugin API headers)
-- OBS Studio installed (for runtime DLLs, need to generate .lib import libraries)
+- Visual Studio 2022 (Desktop development with C++) or VS 2022 Build Tools
+- CMake 3.16+ (bundled with VS)
+- Qt 6 MSVC 2022 64-bit — same version as the Qt DLLs in the installed OBS
+- OBS Studio source at the tag matching the installed OBS (for plugin API headers)
+- OBS Studio installed (DLLs used to generate .lib import libraries)
 - Blackmagic ATEM SDK 10.2.1 (for BMDSwitcherAPI.h)
 - ATEM Software Control installed (provides the COM DLLs at runtime)
 
-### Exact paths on this machine
+### OBS / Qt version matching (important)
+
+- OBS refuses to load a plugin built against a newer libobs than the running
+  OBS (log: `Module '...' compiled with newer libobs X.Y`). The OBS source at
+  D:\cemc-sr\obs-studio is **32.1.0**. The previously installed OBS shipped
+  Qt 6.6.3 (OBS 30.x), so the April 2026 DLL was most likely rejected.
+  Install OBS 32.1.x, or check out the obs-studio tag matching the installed OBS.
+- Compile against the same Qt minor version that the installed OBS ships
+  (check Qt6Core.dll in OBS's bin\64bit).
+
+### Machine state (2026-09-25)
+
+The original setup was done under a Windows account `Admin` that no longer
+exists; the current account is `DELL`. Git reports "dubious ownership" on
+D:\cemc-sr\obs-studio for that reason (use `git -c safe.directory=* ...`).
 
 ```
-Visual Studio:  D:\Program Filesx\Microsoft Visual Studio\2022\Community
-Qt6 SDK:        D:\ProgramFiles\Qt\6.11.0\msvc2022_64
-Qt6 CMake:      D:\ProgramFiles\Qt\6.11.0\msvc2022_64\lib\cmake\Qt6
-OBS source:     D:\cemc-sr\obs-studio
-OBS install:    C:\Program Files\obs-studio
-OBS DLLs:       C:\Program Files\obs-studio\bin\64bit\
-ATEM SDK:       D:\cemc-sr\Blackmagic_ATEM_Switchers_SDK_10.2.1\Blackmagic ATEM Switchers SDK 10.2.1\Windows
-ATEM headers:   D:\cemc-sr\Blackmagic_ATEM_Switchers_SDK_10.2.1\Blackmagic ATEM Switchers SDK 10.2.1\Windows\include
-ATEM COM DLL:   C:\Program Files (x86)\Blackmagic Design\Blackmagic ATEM Switchers\BMDSwitcherAPI64.dll
-Plugin source:  D:\cemc-sr\obs-atem
+Present:
+  VS 2022 Build Tools: C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools
+                       (MSVC 14.44, bundled CMake + Ninja)
+  OBS source:          D:\cemc-sr\obs-studio (32.1.0; libobs\obsconfig.h is a hand-made stub)
+  ATEM SDK:            D:\cemc-sr\Blackmagic_ATEM_Switchers_SDK_10.2.1\Blackmagic ATEM Switchers SDK 10.2.1\Windows
+  ATEM headers:        ...\Windows\include\BMDSwitcherAPI.h
+  OBS import libs:     build\obs.lib, build\obs-frontend-api.lib (generated earlier)
+Missing (user is reinstalling):
+  OBS Studio            (C:\Program Files\obs-studio)
+  ATEM Software Control (C:\Program Files (x86)\Blackmagic Design\Blackmagic ATEM Switchers)
+  Qt 6 MSVC SDK         (was D:\ProgramFiles\Qt\6.11.0\msvc2022_64)
+  VS 2022 Community     (was D:\Program Filesx\Microsoft Visual Studio\2022\Community)
 ```
 
 ### VS Developer Tools
 
-Regular PowerShell does NOT have VS tools (dumpbin, midl, lib, cl) on PATH.
-To load them into the current session:
+Regular PowerShell does NOT have VS tools (dumpbin, lib, cl) on PATH. Open
+"Developer PowerShell for VS 2022" from the Start Menu, or from cmd run:
 
-```powershell
-Import-Module "D:\Program Filesx\Microsoft Visual Studio\2022\Community\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
-Enter-VsDevShell -VsInstallPath "D:\Program Filesx\Microsoft Visual Studio\2022\Community" -DevCmdArguments "-arch=amd64" -SkipAutomaticLocation
 ```
-
-Or open "Developer PowerShell for VS 2022" from the Start Menu.
+"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+```
 
 ### ATEM SDK header note
 
@@ -150,46 +218,44 @@ Source: ...\Windows\Samples\DeviceInfo\BMDSwitcherAPI.h
 Copied to: ...\Windows\include\BMDSwitcherAPI.h
 ```
 
+The SDK has no `_i.c` GUID file. Interface and class IDs come from
+`__uuidof(IBMDSwitcherXxx)` / `__uuidof(CBMDSwitcherDiscovery)` — the header's
+MIDL_INTERFACE / DECLSPEC_UUID attributes make that work in MSVC — so no GUIDs
+are hand-copied anywhere.
+
 ### OBS import libraries
 
-OBS install only ships DLLs, not .lib files. Import libraries are generated
-from the installed DLLs using a PowerShell script:
+OBS install only ships DLLs, not .lib files. Generate import libraries from
+the installed DLLs (Developer PowerShell, repo root):
 
 ```powershell
-# From Developer PowerShell (run once, outputs to build/ directory):
-powershell -ExecutionPolicy Bypass -File build\gen-obs-libs.ps1
+powershell -ExecutionPolicy Bypass -File scripts\gen-obs-libs.ps1
+# other OBS location:  ... -File scripts\gen-obs-libs.ps1 -ObsDir "D:\OBS"
 ```
 
-The script (build\gen-obs-libs.ps1) uses dumpbin + lib and handles the
-dumpbin output format (entries look like: `1  0  ADDR  name = name`).
-Generated files: build\obs.lib and build\obs-frontend-api.lib
-CMakeLists.txt searches CMAKE_BINARY_DIR so they are found automatically.
-
-### Qt version note
-
-OBS ships Qt 6.6.3 runtime DLLs. We compile against Qt 6.11.0 MSVC SDK.
-Minor version mismatch — Qt 6.x maintains forward ABI compatibility for
-widget-level code, but if runtime crashes occur, install Qt 6.6.3 MSVC
-via the Qt MaintenanceTool at D:\ProgramFiles\Qt\MaintenanceTool.exe.
+Generated files: build\obs.lib and build\obs-frontend-api.lib. CMakeLists.txt
+searches CMAKE_BINARY_DIR so they are found automatically. If the OBS headers
+or libs are not found, CMake skips the plugin target with a warning and still
+builds atem-harness and atem-cli.
 
 ### Build commands
 
-Run all of the following from a Developer PowerShell (with VS tools loaded):
+Run from a Developer PowerShell (with VS tools loaded):
 
 ```powershell
-# 1. Generate OBS import libraries (only needed once, or after OBS update)
 cd D:\cemc-sr\obs-atem
-powershell -ExecutionPolicy Bypass -File build\gen-obs-libs.ps1
+powershell -ExecutionPolicy Bypass -File scripts\gen-obs-libs.ps1   # once / after OBS update
 
-# 2. CMake configure (only needed when CMakeLists.txt changes)
 cmake -B build -G "Visual Studio 17 2022" -A x64 `
     -DOBS_DIR="D:/cemc-sr/obs-studio" `
     -DATEM_SDK_DIR="D:/cemc-sr/Blackmagic_ATEM_Switchers_SDK_10.2.1/Blackmagic ATEM Switchers SDK 10.2.1/Windows" `
-    -DQt6_DIR="D:/ProgramFiles/Qt/6.11.0/msvc2022_64/lib/cmake/Qt6"
+    -DQt6_DIR="<Qt>/msvc2022_64/lib/cmake/Qt6"
 
-# 3. Build
 cmake --build build --config Release
 ```
+
+`/utf-8` is set for MSVC in CMakeLists.txt: the sources contain UI glyphs
+(⚙ ⟳ ▶ ● —). Without it MSVC reads them in the ANSI code page.
 
 ### Install
 
@@ -200,7 +266,7 @@ copy build\Release\obs-atem.dll "C:\Program Files\obs-studio\obs-plugins\64bit\"
 
 ## Runtime requirements (on the streaming PC)
 
-- OBS Studio (28+ for Qt6, or 27.x for Qt5)
+- OBS Studio 30+ (matching the libobs the plugin was built against, or newer)
 - ATEM Software Control installed (registers BMDSwitcherAPI64.dll COM server)
 - ATEM Mini connected via USB or Ethernet
 - The plugin DLL placed in obs-plugins/64bit/
@@ -227,36 +293,44 @@ If the plugin logs "Failed to create BMDSwitcherDiscovery", the COM server
 is not registered. Either install ATEM Software Control or run the regsvr32
 command above as Administrator.
 
+## Testing against the real ATEM
+
+1. `atem-cli` (USB) or `atem-cli --ip 192.168.10.240` — confirms the SDK
+   connection, lists macros, inputs and the live PiP values.
+2. `atem-cli run N` / `atem-cli stop` — macro control without any UI.
+3. `atem-harness.exe` — both panels in a plain window, debuggable in VS.
+   Needs the Qt `bin` folder on PATH (or `windeployqt`).
+4. The plugin in OBS — check the OBS log for `[ATEM]` lines.
+
 ## Current status
 
-- Plugin compiled and installed ✓ (build\Release\obs-atem.dll)
-- Installed to C:\Program Files\obs-studio\obs-plugins\64bit\ ✓
-- NOT YET tested against a real ATEM device
-- NEXT STEP: Launch OBS and verify the ATEM Macros dock appears;
-  connect to the ATEM and test macro triggering
-- COM threading model: OBS runs Qt on STA thread; ATEM callbacks
-  are marshaled back via QMetaObject::invokeMethod with Qt::QueuedConnection
+- Macro panel reworked; plugin, harness and CLI build (2026-09-25)
+- PiP SDK layer (`atem-pip`) and panel skeleton build; layout pending review
+  of the HTML mockups
+- NEVER yet run against a real ATEM or loaded in OBS (no record of a
+  successful run; the April 2026 DLL was likely rejected by OBS 30.x — see
+  version matching above)
+- NEXT STEPS: reinstall OBS 32.1.x, Qt (matching OBS), ATEM Software Control;
+  run `atem-cli` against the ATEM; verify PiP value ranges; choose a mockup
 
-### Build fixes applied during initial compile
+### SDK signature notes
 
-- Source files are in project root (not src/ subdirectory)
-- obs-frontend-api.h moved to frontend/api/ in this OBS version (not UI/obs-frontend-api/)
-- obsconfig.h is generated by OBS cmake; a stub was created at obs-studio/libobs/obsconfig.h
-- BMD SDK 10.2.1 has no _i.c GUID file; GUIDs are defined in bmd-guids.cpp
-- IBMDSwitcherMacroPoolCallback::Notify() signature: (eventType, index, transferMacro*)
+- IBMDSwitcherMacroPoolCallback::Notify(eventType, index, transferMacro*)
 - IBMDSwitcherMacroPool::IsValid() uses BOOL*, not a BMDSwitcherMacroValidity enum
-- IBMDSwitcherMacroControl::GetRunStatus() takes 3 params: (status*, loop*, index*)
+- IBMDSwitcherMacroControl::GetRunStatus(status*, loop*, index*); status can be
+  Idle, Running or WaitingForUser (treated as running)
+- IBMDSwitcherKeyFlyParametersCallback::Notify(eventType, keyFrame)
+- BMDSwitcherInputId is `long long`
+- ConnectTo failure reasons are FourCC codes (e.g. 0x63667373 'cfss' = StateSync)
 
 ## Known considerations
 
-- USB video capture (ATEM as UVC webcam) is separate from USB control
-  (virtual ethernet). Only one app can capture the webcam feed at a time,
-  but multiple apps can connect to the control protocol simultaneously.
+- USB video capture (ATEM as UVC webcam) is separate from the control
+  connection. Only one app can capture the webcam feed at a time, but
+  multiple apps can connect to the control protocol simultaneously.
 - The plugin targets Windows only due to the COM-based BMD SDK.
-  A cross-platform version would need PyATEMMax or atem-connection
-  with a middleware layer.
-- OBS 30+ has a new dock registration API (obs_frontend_add_dock_by_id);
-  older OBS uses mainWindow->addDockWidget. Both are handled in plugin-main.cpp.
+- ConnectTo blocks the OBS UI thread for a few seconds when no ATEM answers
+  (at startup and on manual connect).
 
 ## User's hardware setup
 
@@ -265,43 +339,5 @@ command above as Administrator.
 - ATEM IP configured as 192.168.10.240 (subnet 255.255.255.0, gateway 192.168.10.1)
 - Switching mode: Cut Bus
 - Used for church sermon recording with OBS
-- ATEM Software Control version 10.2.1 installed
-- OBS Studio installed at C:\Program Files\obs-studio (Qt 6.6.3)
-- Visual Studio 2022 installed on D: drive
+- ATEM Software Control version 10.2.1
 - Development workspace: D:\cemc-sr\
-
-## ATEM Simulator (for dev/testing without hardware)
-
-`atem-simulator/run.py` emulates the ATEM Mini on UDP port 9910.
-No external dependencies — pure Python stdlib. Reads macros from a TSV file.
-
-```bash
-cd atem-simulator
-python run.py                        # uses built-in default macros
-python run.py --macros macros.tsv    # load macros from TSV file
-```
-
-Then in the OBS plugin settings (⚙), set connection to **Manual IP** → `127.0.0.1`.
-
-TSV format (2 columns, no header): `Macro Name<TAB>Description`
-
-The simulator handles the full ATEM UDP protocol handshake, dumps initial
-state (product name, topology, macro properties), responds to macro
-run/stop commands, and prints all received commands to the console.
-
-### How the simulator was built
-
-`atem-simulator/capture.py` was written first — it connects to the real
-ATEM Mini and dumps every field sent during the initial state handshake,
-printing the exact byte values and the `struct.pack` calls needed to reproduce
-them. That output directly informed the field builders in `run.py` (`_ver`,
-`_pin`, `_top`, `_MAC`, `MPrp`, etc.).
-
-```bash
-cd atem-simulator
-python capture.py              # connects to 192.168.10.240
-python capture.py 192.168.10.1 # specify IP
-```
-
-Re-run `capture.py` against real hardware if BMD releases a firmware
-update that might change protocol fields.
