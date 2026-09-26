@@ -1,62 +1,50 @@
 #pragma once
 
-#include <QWidget>
 #include <QTimer>
+#include <QWidget>
+#include <array>
 #include <map>
 #include <vector>
 
 #include "atem-session.h"
 
+class CamButton;
 class PanelHeader;
+class PipPreview;
+class PipSettings;
+class PipSpinBox;
+class PresetButton;
+struct PipPreset;
 class QCheckBox;
 class QComboBox;
-class QDoubleSpinBox;
 class QLabel;
+class QLineEdit;
 class QPushButton;
-class QSlider;
 class QStackedWidget;
-
-// ── Slider + number box pair ─────────────────────────────────
-//
-// The slider covers the useful on-screen range for quick moves; the spin box
-// accepts precise values (and a wider range) typed by the operator.
-
-class PipValueControl : public QWidget {
-    Q_OBJECT
-public:
-    PipValueControl(const QString& label, int decimals, QWidget* parent = nullptr);
-
-    void setLabel(const QString& label);
-    void setLimits(double sliderMin, double sliderMax, double spinMin, double spinMax);
-    // From the device: updates both widgets without emitting valueEdited.
-    void setValue(double value);
-    double value() const;
-    // True while the operator is dragging or typing — device echoes must not
-    // overwrite the control mid-edit.
-    bool isEditing() const;
-
-signals:
-    void valueEdited(double value);
-
-private:
-    int toTicks(double value) const;
-
-    QLabel* m_label;
-    QSlider* m_slider;
-    QDoubleSpinBox* m_spin;
-    double m_scale;
-    bool m_silent = false;
-};
+class QToolButton;
 
 // ── PiP panel ────────────────────────────────────────────────
 //
-// Skeleton: functional, deliberately plain. The final layout is chosen from
-// the HTML mockups in mockups/ and then applied here.
+// Layout (mockups/index.html is the reference):
+//   camera row 1  — main (program) camera, one lit
+//   camera row 2  — PiP camera; press the lit one to take the PiP off air
+//   presets 1–7   | program preview (drag = move, corner = resize)
+//                 | Position X / Y / Size
+//                 | Crop Top / Bottom / Left / Right (mask on when any > 0)
+//                 | Save current to [Button n] [Save]
+//   ⚙ page        — name, colour and picture per camera
+//
+// The panel keeps a local view of the PiP state so it reacts instantly;
+// edits are sent to the switcher (continuous values at ~30 Hz) and the
+// device's echoes are merged back without fighting the operator.
 
 class AtemPipDock : public QWidget {
     Q_OBJECT
 public:
     explicit AtemPipDock(AtemSession* session, QWidget* parent = nullptr);
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private slots:
     void onConnectionChanged(AtemState state);
@@ -64,39 +52,77 @@ private slots:
     void flushPending();
 
 private:
+    // Everything the operator can change, as one list so edits, holds and
+    // device merging work the same way for all of them.
+    enum class Field {
+        Program, Pip, OnAir, CropEnabled,
+        PositionX, PositionY, SizeX, SizeY,
+        CropTop, CropBottom, CropLeft, CropRight,
+    };
+    static constexpr int kFieldCount = 12;
+
+    struct Hold {
+        double value;
+        qint64 until;   // ms since epoch
+    };
+
     void buildUI();
-    QWidget* buildControls();
-    void rebuildInputLists(const std::vector<AtemInputInfo>& inputs);
-    void queueValue(AtemPipField field, double value);
+    QWidget* buildControlsPage();
+    QWidget* buildSettingsPage();
+    void layoutStage();
+    void render();
+    void renderSettingsPage();
     void updateStatus();
+    void showMainPage();
+
+    void edit(Field field, double value);
+    void editSize(double size);
+    void editCrop(Field field, double value);
+    void syncMask();
+    void onMainClicked(BMDSwitcherInputId input);
+    void onPipClicked(BMDSwitcherInputId input);
+
+    void savePreset(int index);
+    void recallPreset(int index);
+    bool presetMatches(const PipPreset& preset) const;
+    QImage snapshotProgram() const;
+
+    void chooseColor(int camera);
+    void choosePicture(int camera);
 
     AtemSession* m_session;
+    PipSettings* m_settings;
 
     PanelHeader*    m_header = nullptr;
     QStackedWidget* m_pages = nullptr;
     QWidget*        m_offlinePage = nullptr;
     QLabel*         m_offlineText = nullptr;
     QWidget*        m_controlsPage = nullptr;
+    QWidget*        m_settingsPage = nullptr;
 
-    QComboBox*   m_mainInput = nullptr;
-    QComboBox*   m_pipInput = nullptr;
-    QPushButton* m_onAirBtn = nullptr;
-    QLabel*      m_notDveText = nullptr;
+    QWidget* m_body = nullptr;
+    QWidget* m_presetColumn = nullptr;
+    QWidget* m_dveWarning = nullptr;
     QPushButton* m_makeDveBtn = nullptr;
+    std::vector<CamButton*> m_mainButtons;
+    std::vector<CamButton*> m_pipButtons;
+    std::vector<PresetButton*> m_presetButtons;
+    PipPreview* m_preview = nullptr;
+    std::map<Field, PipSpinBox*> m_fields;
+    QComboBox* m_saveSlot = nullptr;
 
-    PipValueControl* m_posX = nullptr;
-    PipValueControl* m_posY = nullptr;
-    PipValueControl* m_sizeX = nullptr;
-    PipValueControl* m_sizeY = nullptr;
-    QCheckBox*       m_lockAspect = nullptr;
-    QCheckBox*       m_cropEnabled = nullptr;
-    PipValueControl* m_cropTop = nullptr;
-    PipValueControl* m_cropBottom = nullptr;
-    PipValueControl* m_cropLeft = nullptr;
-    PipValueControl* m_cropRight = nullptr;
+    struct CameraRow {
+        QLabel* thumb = nullptr;
+        QLineEdit* name = nullptr;
+        QToolButton* color = nullptr;
+    };
+    std::array<CameraRow, 4> m_cameraRows;
+    QCheckBox* m_showNames = nullptr;
 
-    std::vector<AtemInputInfo> m_inputs;
-    bool m_syncAspectLock = true;   // set the lock from the device on next refresh
-    std::map<AtemPipField, double> m_pending;
+    AtemPipState m_view;           // what the panel shows
+    bool m_viewLoaded = false;     // m_view has been filled from the device
+    std::map<AtemPipField, double> m_pending;   // continuous edits not yet sent
+    std::map<Field, Hold> m_holds;              // sent edits awaiting the echo
     QTimer m_flushTimer;
+    QTimer m_holdTimer;
 };

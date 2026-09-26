@@ -7,6 +7,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Sources contain UTF-8 (UI glyphs like ⚙ ▶ ●). Without /utf-8 MSVC reads
 # them in the system code page and the glyphs turn into mojibake.
 add_compile_options($<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
+# windows.h (pulled in by the BMD SDK header) defines min/max macros that
+# break std::min/std::max depending on include order.
+add_compile_definitions(NOMINMAX)
 
 # ── Find OBS Studio SDK ──────────────────────────────────────
 # Set OBS_DIR to your obs-studio source or install path
@@ -92,6 +95,12 @@ set(ATEM_PANEL_SOURCES
     macro-dock.cpp
     pip-dock.h
     pip-dock.cpp
+    pip-preview.h
+    pip-preview.cpp
+    pip-settings.h
+    pip-settings.cpp
+    pip-widgets.h
+    pip-widgets.cpp
     settings-dialog.h
     settings-dialog.cpp
 )

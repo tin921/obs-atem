@@ -10,6 +10,20 @@ using FlyCallback       = BmdCallback<IBMDSwitcherKeyFlyParametersCallback,
 using DveCallback       = BmdCallback<IBMDSwitcherKeyDVEParametersCallback, BMDSwitcherKeyDVEParametersEventType>;
 using InputCallback     = BmdCallback<IBMDSwitcherInputCallback, BMDSwitcherInputEventType>;
 
+std::string callText(const char* name, double value) {
+    char buf[96];
+    snprintf(buf, sizeof(buf), "%s(%.3f)", name, value);
+    return buf;
+}
+
+std::string callText(const char* name, BMDSwitcherInputId value) {
+    return std::string(name) + "(" + std::to_string(value) + ")";
+}
+
+std::string callText(const char* name, bool value) {
+    return std::string(name) + (value ? "(TRUE)" : "(FALSE)");
+}
+
 } // namespace
 
 AtemPip::~AtemPip() {
@@ -190,17 +204,17 @@ AtemPipState AtemPip::state() const {
 
 bool AtemPip::setProgramInput(BMDSwitcherInputId input) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    return m_mixEffect && check(m_mixEffect->SetProgramInput(input), "SetProgramInput");
+    return m_mixEffect && check(m_mixEffect->SetProgramInput(input), callText("SetProgramInput", input));
 }
 
 bool AtemPip::setPipInput(BMDSwitcherInputId input) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    return m_key && check(m_key->SetInputFill(input), "SetInputFill");
+    return m_key && check(m_key->SetInputFill(input), callText("SetInputFill", input));
 }
 
 bool AtemPip::setOnAir(bool onAir) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    return m_key && check(m_key->SetOnAir(onAir ? TRUE : FALSE), "SetOnAir");
+    return m_key && check(m_key->SetOnAir(onAir ? TRUE : FALSE), callText("SetOnAir", onAir));
 }
 
 bool AtemPip::makeDVE() {
@@ -211,36 +225,36 @@ bool AtemPip::makeDVE() {
 bool AtemPip::setValue(AtemPipField field, double value) {
     std::lock_guard<std::mutex> lock(m_mutex);
     switch (field) {
-    case AtemPipField::PositionX:  return m_fly && check(m_fly->SetPositionX(value), "SetPositionX");
-    case AtemPipField::PositionY:  return m_fly && check(m_fly->SetPositionY(value), "SetPositionY");
-    case AtemPipField::SizeX:      return m_fly && check(m_fly->SetSizeX(value), "SetSizeX");
-    case AtemPipField::SizeY:      return m_fly && check(m_fly->SetSizeY(value), "SetSizeY");
-    case AtemPipField::CropTop:    return m_dve && check(m_dve->SetMaskTop(value), "SetMaskTop");
-    case AtemPipField::CropBottom: return m_dve && check(m_dve->SetMaskBottom(value), "SetMaskBottom");
-    case AtemPipField::CropLeft:   return m_dve && check(m_dve->SetMaskLeft(value), "SetMaskLeft");
-    case AtemPipField::CropRight:  return m_dve && check(m_dve->SetMaskRight(value), "SetMaskRight");
+    case AtemPipField::PositionX:  return m_fly && check(m_fly->SetPositionX(value), callText("SetPositionX", value));
+    case AtemPipField::PositionY:  return m_fly && check(m_fly->SetPositionY(value), callText("SetPositionY", value));
+    case AtemPipField::SizeX:      return m_fly && check(m_fly->SetSizeX(value), callText("SetSizeX", value));
+    case AtemPipField::SizeY:      return m_fly && check(m_fly->SetSizeY(value), callText("SetSizeY", value));
+    case AtemPipField::CropTop:    return m_dve && check(m_dve->SetMaskTop(value), callText("SetMaskTop", value));
+    case AtemPipField::CropBottom: return m_dve && check(m_dve->SetMaskBottom(value), callText("SetMaskBottom", value));
+    case AtemPipField::CropLeft:   return m_dve && check(m_dve->SetMaskLeft(value), callText("SetMaskLeft", value));
+    case AtemPipField::CropRight:  return m_dve && check(m_dve->SetMaskRight(value), callText("SetMaskRight", value));
     }
     return false;
 }
 
 bool AtemPip::setCropEnabled(bool enabled) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    return m_dve && check(m_dve->SetMasked(enabled ? TRUE : FALSE), "SetMasked");
+    return m_dve && check(m_dve->SetMasked(enabled ? TRUE : FALSE), callText("SetMasked", enabled));
 }
 
 bool AtemPip::setBorderEnabled(bool enabled) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    return m_dve && check(m_dve->SetBorderEnabled(enabled ? TRUE : FALSE), "SetBorderEnabled");
+    return m_dve && check(m_dve->SetBorderEnabled(enabled ? TRUE : FALSE), callText("SetBorderEnabled", enabled));
 }
 
 bool AtemPip::resetPositionAndSize() {
     std::lock_guard<std::mutex> lock(m_mutex);
-    return m_fly && check(m_fly->ResetDVE(), "ResetDVE");
+    return m_fly && check(m_fly->ResetDVE(), "ResetDVE()");
 }
 
 bool AtemPip::resetCrop() {
     std::lock_guard<std::mutex> lock(m_mutex);
-    return m_dve && check(m_dve->ResetMask(), "ResetMask");
+    return m_dve && check(m_dve->ResetMask(), "ResetMask()");
 }
 
 void AtemPip::notifyChanged() {
@@ -251,10 +265,13 @@ void AtemPip::trace(const std::string& msg) {
     if (m_onTrace) m_onTrace(msg);
 }
 
-bool AtemPip::check(HRESULT hr, const char* what) {
-    if (SUCCEEDED(hr)) return true;
-    char buf[96];
-    snprintf(buf, sizeof(buf), "[ATEM PiP] %s failed hr=0x%08X", what, static_cast<unsigned>(hr));
-    trace(buf);
+bool AtemPip::check(HRESULT hr, const std::string& call) {
+    if (SUCCEEDED(hr)) {
+        if (m_logCalls) trace("[ATEM PiP] " + call);
+        return true;
+    }
+    char code[16];
+    snprintf(code, sizeof(code), "0x%08X", static_cast<unsigned>(hr));
+    trace("[ATEM PiP] " + call + " failed hr=" + code);
     return false;
 }

@@ -19,7 +19,7 @@
 //   crop        = DVE mask                 (IBMDSwitcherKeyDVEParameters)
 //
 // Units are the switcher's own. The SDK manual gives no numeric ranges; the
-// panel's slider limits live in pip-dock.cpp and must be checked against the
+// panel's value limits live in pip-dock.cpp and must be checked against the
 // real device.
 
 struct AtemInputInfo {
@@ -55,7 +55,7 @@ struct AtemPipState {
     bool borderEnabled = false;
 };
 
-// Continuous values the panel drives from sliders/spin boxes.
+// Continuous values the panel drives from the preview and number boxes.
 enum class AtemPipField {
     PositionX,
     PositionY,
@@ -98,11 +98,13 @@ public:
     // Fires on a BMD SDK thread whenever PiP-relevant switcher state changes.
     void setChangeCallback(ChangeCallback cb) { m_onChange = std::move(cb); }
     void setTraceCallback(TraceCallback cb) { m_onTrace = std::move(cb); }
+    // Also trace every successful SDK call (atem-harness turns this on).
+    void setLogCalls(bool on) { m_logCalls = on; }
 
 private:
     void notifyChanged();
     void trace(const std::string& msg);
-    bool check(HRESULT hr, const char* what);
+    bool check(HRESULT hr, const std::string& call);
     void detachLocked();
 
     IBMDSwitcherMixEffectBlock*    m_mixEffect = nullptr;
@@ -120,4 +122,5 @@ private:
     mutable std::mutex m_mutex;
     ChangeCallback m_onChange;
     TraceCallback m_onTrace;
+    bool m_logCalls = false;
 };

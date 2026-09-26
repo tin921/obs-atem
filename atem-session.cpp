@@ -104,7 +104,7 @@ void AtemSession::shutdown() {
 }
 
 void AtemSession::queuePipChanged() {
-    // A slider drag produces a burst of fly/mask events; collapse each burst
+    // A preview drag produces a burst of fly/mask events; collapse each burst
     // into one pipChanged per trip through the event loop.
     if (m_pipChangePending.exchange(true)) return;
     QMetaObject::invokeMethod(this, [this]() {
