@@ -3,8 +3,6 @@
 #include "settings-dialog.h"
 
 #include "obs-log.h"
-#include <QApplication>
-#include <QClipboard>
 #include <QHBoxLayout>
 #include <QLineEdit>
 #include <QStyle>
@@ -55,7 +53,6 @@ AtemMacroDock::AtemMacroDock(AtemSession* session, QWidget* parent)
 
     connect(m_session, &AtemSession::connectionChanged, this, &AtemMacroDock::onConnectionChanged);
     connect(m_session, &AtemSession::macrosChanged, this, &AtemMacroDock::rebuildContent);
-    connect(m_session, &AtemSession::traceMessage, this, &AtemMacroDock::onTrace);
 
     onConnectionChanged(m_session->state());
 }
@@ -77,28 +74,7 @@ void AtemMacroDock::buildUI() {
     m_contentLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->addWidget(m_contentArea, 1);
 
-    // Trace log: connection diagnostics for first-time hardware setup
-    auto* traceWidget = new QWidget(this);
-    auto* traceLayout = new QHBoxLayout(traceWidget);
-    traceLayout->setContentsMargins(4, 4, 4, 4);
-    traceLayout->setSpacing(4);
-
-    m_traceArea = new QTextEdit(traceWidget);
-    m_traceArea->setObjectName("traceArea");
-    m_traceArea->setReadOnly(true);
-    m_traceArea->setMaximumHeight(80);
-    traceLayout->addWidget(m_traceArea, 1);
-
-    auto* copyBtn = new QPushButton("Copy", traceWidget);
-    copyBtn->setToolTip("Copy connection trace to clipboard");
-    connect(copyBtn, &QPushButton::clicked, this, [this]() {
-        QApplication::clipboard()->setText(m_traceArea->toPlainText());
-    });
-    auto* copyColumn = new QVBoxLayout();
-    copyColumn->addWidget(copyBtn);
-    copyColumn->addStretch();
-    traceLayout->addLayout(copyColumn);
-    mainLayout->addWidget(traceWidget);
+    // The connection log is in the settings dialog (⚙).
 
     m_playerBar = new QFrame(this);
     m_playerBar->setObjectName("playerBar");
@@ -271,10 +247,6 @@ void AtemMacroDock::onConnectionChanged(AtemState state) {
     updateStatusBar();
     m_refreshBtn->setEnabled(state == AtemState::Connected);
     if (state != AtemState::Connecting) rebuildContent();
-}
-
-void AtemMacroDock::onTrace(const QString& line) {
-    m_traceArea->append(line);
 }
 
 void AtemMacroDock::rebuildContent() {

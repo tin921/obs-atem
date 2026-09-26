@@ -1,5 +1,8 @@
 #include "settings-dialog.h"
 
+#include <QApplication>
+#include <QClipboard>
+
 static const char* SETTINGS_STYLE = R"(
     QDialog {
         background: #1e1e1e;
@@ -91,7 +94,7 @@ SettingsDialog::SettingsDialog(AtemSession* session, QWidget* parent)
     : QDialog(parent), m_session(session)
 {
     setWindowTitle("ATEM Connection Settings");
-    setMinimumWidth(380);
+    setMinimumWidth(460);
     buildUI();
     applyStyle();
 }
@@ -179,6 +182,33 @@ void SettingsDialog::buildUI() {
     }
 
     layout->addWidget(connectGroup);
+
+    // ── Connection Log Group ─────────────────────────────────
+    // Everything the plugin traced so far, live while the dialog is open.
+    auto* logGroup = new QGroupBox("Connection Log", this);
+    auto* logLayout = new QVBoxLayout(logGroup);
+
+    m_traceArea = new QTextEdit(logGroup);
+    m_traceArea->setReadOnly(true);
+    m_traceArea->setMinimumHeight(160);
+    m_traceArea->setPlainText(m_session->traceHistory().join('\n'));
+    m_traceArea->moveCursor(QTextCursor::End);
+    logLayout->addWidget(m_traceArea);
+    connect(m_session, &AtemSession::traceMessage, this, [this](const QString& line) {
+        m_traceArea->append(line);
+    });
+
+    auto* copyRow = new QHBoxLayout();
+    copyRow->addStretch();
+    auto* copyBtn = new QPushButton("Copy log", logGroup);
+    copyBtn->setToolTip("Copy the connection log to the clipboard");
+    connect(copyBtn, &QPushButton::clicked, this, [this]() {
+        QApplication::clipboard()->setText(m_traceArea->toPlainText());
+    });
+    copyRow->addWidget(copyBtn);
+    logLayout->addLayout(copyRow);
+
+    layout->addWidget(logGroup);
 
     // ── Troubleshooting Group ────────────────────────────────
     auto* troubleGroup = new QGroupBox("Troubleshooting", this);

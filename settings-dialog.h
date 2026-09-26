@@ -34,5 +34,6 @@ private:
     Action m_action = Action::None;
 
     QLineEdit*  m_ipInput = nullptr;
-    QTextEdit*  m_logArea = nullptr;
+    QTextEdit*  m_traceArea = nullptr;   // connection log
+    QTextEdit*  m_logArea = nullptr;     // troubleshooting checklist
 };

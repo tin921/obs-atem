@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <atomic>
 
 #include "atem-controller.h"
@@ -29,6 +30,10 @@ public:
     QString lastIP() const;
     bool lastWasIP() const;
 
+    // The connection log so far (newest last, at most kTraceHistory lines),
+    // for the settings dialog; traceMessage() delivers new lines.
+    const QStringList& traceHistory() const { return m_traceHistory; }
+
     // All blocking: BMD's ConnectTo runs on the calling (UI) thread.
     bool connectUSB();
     bool connectIP(const QString& address);
@@ -46,7 +51,10 @@ private:
     bool finishConnect(bool ok, bool viaIP, const QString& address);
     void queuePipChanged();
 
+    static constexpr int kTraceHistory = 500;
+
     AtemController m_atem;
+    QStringList m_traceHistory;
     bool m_busy = false;
     std::atomic<bool> m_pipChangePending{false};
 };

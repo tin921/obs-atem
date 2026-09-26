@@ -105,14 +105,14 @@ obs-atem/
 │                               #   bmdRelease, BSTR <-> UTF-8 helpers
 ├── atem-session.h/cpp          # Shared connection + Qt signals + saved settings
 ├── panel-common.h/cpp          # Shared stylesheet + PanelHeader (status dot, title)
-├── macro-dock.h/cpp            # ATEM Macros panel (connect view, grid, player bar, trace log)
+├── macro-dock.h/cpp            # ATEM Macros panel (connect view, grid, player bar)
 ├── pip-dock.h/cpp              # ATEM PiP panel: camera rows, presets, fields, ⚙ page;
 │                               #   local view + ~30 Hz sends + echo holds
 ├── pip-preview.h/cpp           # Program preview (drag/resize/nudge) + paintProgram()
 │                               #   shared with preset thumbnails; PipGeometry
 ├── pip-widgets.h/cpp           # PictureButton (CamButton, PresetButton), PipSpinBox
 ├── pip-settings.h/cpp          # Camera names/colours/pictures + presets (QSettings "pip/...")
-├── settings-dialog.h/cpp       # ⚙ dialog: status, USB/IP connect, troubleshooting
+├── settings-dialog.h/cpp       # ⚙ dialog: status, USB/IP connect, connection log, troubleshooting
 ├── obs-log.h                   # blog(): libobs inside OBS, stderr elsewhere
 ├── harness/main.cpp            # atem-harness: both panels + "ATEM log" dock (SDK calls)
 ├── cli/main.cpp                # atem-cli: info | pip | run N | stop [--ip ADDR]

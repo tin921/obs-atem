@@ -182,15 +182,6 @@ const char* const kPanelStyleSheet = R"(
         color: #cccccc;
         selection-background-color: #094771;
     }
-
-    /* Trace log */
-    #traceArea {
-        background: #1a1a1a;
-        color: #aaaaaa;
-        font-family: Consolas, monospace;
-        font-size: 10px;
-        border: 1px solid #3c3c3c;
-    }
 )";
 
 void applyPanelStyle(QWidget* panel, const QString& extraStyle) {

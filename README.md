@@ -233,7 +233,7 @@ obs-atem/
 ├── pip-preview.h/cpp       Program preview (drag/resize) and preset thumbnails
 ├── pip-widgets.h/cpp       Camera/preset picture buttons, number boxes
 ├── pip-settings.h/cpp      Camera names/colours/pictures and presets (saved)
-├── settings-dialog.h/cpp   Connection settings + troubleshooting dialog
+├── settings-dialog.h/cpp   Connection settings, connection log + troubleshooting dialog
 ├── obs-log.h               blog() shim so panel code also builds outside OBS
 ├── harness/main.cpp        Standalone Qt host for the panels
 ├── cli/main.cpp            Command-line diagnostics

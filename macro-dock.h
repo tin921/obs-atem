@@ -9,7 +9,6 @@
 #include <QTimer>
 #include <QToolButton>
 #include <QFrame>
-#include <QTextEdit>
 #include <vector>
 
 #include "atem-session.h"
@@ -48,7 +47,6 @@ private slots:
     void onStopMacro();
     void onMacroClicked(uint32_t index);
     void onConnectionChanged(AtemState state);
-    void onTrace(const QString& line);
     void rebuildContent();
     void pollRunStatus();
 
@@ -76,9 +74,6 @@ private:
     QFrame*       m_playerBar = nullptr;
     QLabel*       m_runningLabel = nullptr;
     QPushButton*  m_stopBtn = nullptr;
-
-    // Trace area
-    QTextEdit*    m_traceArea = nullptr;
 
     QTimer*       m_pollTimer = nullptr;
 

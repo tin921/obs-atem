@@ -25,8 +25,11 @@ AtemSession::AtemSession(QObject* parent)
         QString line = QString("[%1] %2")
             .arg(QDateTime::currentDateTime().toString("HH:mm:ss.zzz"),
                  QString::fromStdString(msg));
-        QMetaObject::invokeMethod(this, [this, line]() { emit traceMessage(line); },
-                                  Qt::QueuedConnection);
+        QMetaObject::invokeMethod(this, [this, line]() {
+            m_traceHistory.append(line);
+            if (m_traceHistory.size() > kTraceHistory) m_traceHistory.removeFirst();
+            emit traceMessage(line);
+        }, Qt::QueuedConnection);
     });
     m_atem.setMacroUpdateCallback([this]() {
         QMetaObject::invokeMethod(this, [this]() { emit macrosChanged(); }, Qt::QueuedConnection);
