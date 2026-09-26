@@ -59,10 +59,10 @@ function inputById(id) {
   return INPUTS.find((i) => i.id === id) || { id, name: 'Input ' + id, short: String(id), color: '#333' };
 }
 
-// Paints an input's picture (operator-chosen PNG) or its placeholder colour.
-function paintInput(el, input, image) {
-  el.classList.toggle('bars', !image && input.color === 'bars');
-  el.style.background = image || input.color === 'bars' ? '' : input.color;
+// Paints an input's picture (operator-chosen PNG) or its colour.
+function paintInput(el, input, image, color = input.color) {
+  el.classList.toggle('bars', !image && color === 'bars');
+  el.style.background = image || color === 'bars' ? '' : color;
   el.style.backgroundImage = image ? `url("${image}")` : '';
   el.style.backgroundSize = image ? 'cover' : '';
   el.style.backgroundPosition = image ? 'center' : '';
@@ -108,6 +108,18 @@ class PipModel extends EventTarget {
     this.images = storeGet('pipMockup.images') || {};
     this.labels = storeGet('pipMockup.labels') || {};
     this.showNames = storeGet('pipMockup.showNames') === true;
+    this.colors = storeGet('pipMockup.colors') || {};
+  }
+
+  colorFor(id) {
+    return this.colors[id] || inputById(id).color;
+  }
+
+  setColor(id, color) {
+    if (color) this.colors[id] = color;
+    else delete this.colors[id];
+    storeSet('pipMockup.colors', this.colors);
+    this.emit('colors');
   }
 
   labelFor(id) {
@@ -263,9 +275,9 @@ function renderPreview(preview, model) {
   const pip = inputById(s.pipInput);
   const mainImage = model.imageFor(main.id);
   const pipImage = model.imageFor(pip.id);
-  paintInput(preview.main, main, mainImage);
+  paintInput(preview.main, main, mainImage, model.colorFor(main.id));
   preview.main.textContent = mainImage ? '' : model.labelFor(main.id).toUpperCase();
-  paintInput(preview.pip, pip, pipImage);
+  paintInput(preview.pip, pip, pipImage, model.colorFor(pip.id));
   preview.pip.textContent = pipImage ? '' : model.labelFor(pip.id);
   const r = pipRect(s);
   Object.assign(preview.pip.style, {

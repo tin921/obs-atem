@@ -102,7 +102,17 @@
   .img-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 6px; align-items: center; margin-bottom: 6px; }
   .img-row .fields { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .img-row .fields input[type="text"] { width: 100%; }
-  .img-row .actions { display: flex; gap: 4px; }
+  .img-row .actions { display: flex; gap: 4px; align-items: center; }
+  .img-row input[type="color"] {
+    width: 28px;
+    height: 26px;
+    padding: 1px;
+    flex: none;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    cursor: pointer;
+  }
   .img-row .thumb {
     aspect-ratio: 16 / 9;
     border: 1px solid var(--border);
@@ -154,7 +164,8 @@
       <li><b>Preset buttons</b>: store main camera, PiP camera, PiP on/off, X, Y, size and crop. The
           thumbnail is a picture of the preview at save time (drawn from the camera pictures). In OBS it
           could instead be a real frame of the ATEM video — see question 1.</li>
-      <li><b>⚙ settings</b>: a name and a picture per camera; the picture is used on the camera buttons, in the preview and
+      <li><b>⚙ settings</b>: a name, colour and picture per camera; the colour fills in where there is
+          no picture; the picture is used on the camera buttons, in the preview and
           therefore in the preset thumbnails. In the plugin these would be PNG file paths saved in the
           plugin settings; here they are kept in this browser only.</li>
       <li>Open question — preset thumbnails: picture composed from the camera PNGs (as here), or a real
@@ -200,9 +211,9 @@
 
       <div class="settings" id="settings" hidden>
         <div class="settings-head">PiP settings <button id="closeSettings">Done</button></div>
-        <p>A name and a picture for each camera. The picture is shown on the camera buttons, in the
-           preview and in the thumbnails of saved buttons (PNG, any size — shown as 16:9). The name
-           is used in tooltips and wherever a camera has no picture.</p>
+        <p>A name, colour and picture for each camera. The picture is shown on the camera buttons, in
+           the preview and in the thumbnails of saved buttons (PNG, any size — shown as 16:9). The
+           name and colour are used wherever a camera has no picture; the name also in tooltips.</p>
         <div id="imageRows"></div>
         <label class="check"><input type="checkbox" id="showNames"> Show names on camera buttons</label>
       </div>
@@ -255,7 +266,7 @@
         b.setAttribute('aria-pressed', lit);
         const img = model.imageFor(cam.id);
         b.style.backgroundImage = img ? `url("${img}")` : '';
-        b.style.backgroundColor = img ? '' : cam.color;
+        b.style.backgroundColor = img ? '' : model.colorFor(cam.id);
         const name = model.labelFor(cam.id);
         const span = b.querySelector('span');
         span.textContent = name;
@@ -418,11 +429,12 @@
       ctx.drawImage(img, src.x * img.width, src.y * img.height, src.w * img.width, src.h * img.height, dst.x, dst.y, dst.w, dst.h);
       return;
     }
-    if (input.color === 'bars') {
+    const color = model.colorFor(input.id);
+    if (color === 'bars') {
       const bars = ['#c0c0c0', '#c0c000', '#00c0c0', '#00c000', '#c000c0', '#c00000', '#0000c0'];
       bars.forEach((c, i) => { ctx.fillStyle = c; ctx.fillRect(dst.x + (i * dst.w) / 7, dst.y, dst.w / 7 + 1, dst.h); });
     } else {
-      ctx.fillStyle = input.color;
+      ctx.fillStyle = color;
       ctx.fillRect(dst.x, dst.y, dst.w, dst.h);
     }
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
@@ -541,11 +553,15 @@
     row.className = 'img-row';
     row.innerHTML = `<div class="thumb"></div><div class="fields">` +
       `<input type="text" maxlength="20" data-name="${cam.id}" placeholder="${cam.name}" aria-label="Name for ${cam.name}">` +
-      `<div class="actions"><label class="file-btn">Choose PNG…<input type="file" accept=".png,image/png" data-cam="${cam.id}"></label>` +
+      `<div class="actions"><input type="color" data-color="${cam.id}" aria-label="Colour for ${cam.name}" title="Colour (used where there is no picture)">` +
+      `<label class="file-btn">Choose PNG…<input type="file" accept=".png,image/png" data-cam="${cam.id}"></label>` +
       `<button>Clear picture</button></div></div>`;
     const nameInput = row.querySelector('input[type=text]');
     nameInput.value = model.labels[cam.id] || '';
     nameInput.addEventListener('input', () => model.setLabel(cam.id, nameInput.value));
+    const colorInput = row.querySelector('input[type=color]');
+    colorInput.value = model.colorFor(cam.id);
+    colorInput.addEventListener('input', () => model.setColor(cam.id, colorInput.value));
     const input = row.querySelector('input[type=file]');
     input.addEventListener('change', async () => {
       const file = input.files[0];
@@ -565,7 +581,7 @@
     for (const [cam, thumb] of imageRows) {
       const img = model.imageFor(cam.id);
       thumb.style.backgroundImage = img ? `url("${img}")` : '';
-      thumb.style.backgroundColor = img ? '' : cam.color;
+      thumb.style.backgroundColor = img ? '' : model.colorFor(cam.id);
     }
   }
   $('showNames').checked = model.showNames;
