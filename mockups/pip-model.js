@@ -104,8 +104,28 @@ class PipModel extends EventTarget {
     };
     this.pending = new Map();
     this.flushTimer = null;
-    // input id → image data URL, chosen in the panel settings
+    // input id → image data URL / custom name, chosen in the panel settings
     this.images = storeGet('pipMockup.images') || {};
+    this.labels = storeGet('pipMockup.labels') || {};
+    this.showNames = storeGet('pipMockup.showNames') === true;
+  }
+
+  labelFor(id) {
+    return this.labels[id] || inputById(id).name;
+  }
+
+  setLabel(id, text) {
+    const clean = String(text || '').trim();
+    if (clean) this.labels[id] = clean;
+    else delete this.labels[id];
+    storeSet('pipMockup.labels', this.labels);
+    this.emit('labels');
+  }
+
+  setShowNames(on) {
+    this.showNames = !!on;
+    storeSet('pipMockup.showNames', this.showNames);
+    this.emit('labels');
   }
 
   imageFor(id) {
@@ -244,9 +264,9 @@ function renderPreview(preview, model) {
   const mainImage = model.imageFor(main.id);
   const pipImage = model.imageFor(pip.id);
   paintInput(preview.main, main, mainImage);
-  preview.main.textContent = mainImage ? '' : main.name.toUpperCase();
+  preview.main.textContent = mainImage ? '' : model.labelFor(main.id).toUpperCase();
   paintInput(preview.pip, pip, pipImage);
-  preview.pip.textContent = pipImage ? '' : pip.short;
+  preview.pip.textContent = pipImage ? '' : model.labelFor(pip.id);
   const r = pipRect(s);
   Object.assign(preview.pip.style, {
     left: r.left + '%',

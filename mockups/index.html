@@ -10,7 +10,7 @@
 
   /* Picture buttons (cameras and presets). The border is always 2px so
      hover/active only recolour it and never change the button's size. */
-  .bus { grid-template-columns: 34px repeat(4, 1fr); }
+  .bus { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .cam, .preset {
     position: relative;
     aspect-ratio: 16 / 9;
@@ -27,6 +27,10 @@
   .cam[aria-pressed="true"], .preset[aria-pressed="true"] { border-color: var(--pip); }
   .cam span {
     position: absolute;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 2px;
     left: 0;
     right: 0;
     bottom: 0;
@@ -95,7 +99,10 @@
   }
   .settings-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: var(--text-strong); }
   .settings p { margin: 0; color: var(--muted); font-size: 11px; }
-  .img-row { display: grid; grid-template-columns: 64px 1fr auto auto; gap: 6px; align-items: center; }
+  .img-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 6px; align-items: center; margin-bottom: 6px; }
+  .img-row .fields { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .img-row .fields input[type="text"] { width: 100%; }
+  .img-row .actions { display: flex; gap: 4px; }
   .img-row .thumb {
     aspect-ratio: 16 / 9;
     border: 1px solid var(--border);
@@ -137,8 +144,9 @@
   <details>
     <summary>How this maps to the panel, and open questions</summary>
     <ul>
-      <li>Camera and preset buttons: orange border on hover and when active; the camera name
-          shows only while no picture is set.</li>
+      <li>The top row is MAIN, the second row is PIP (no row labels; tooltips say which).</li>
+      <li>Camera and preset buttons: orange border on hover and when active. Each camera's name is set
+          in ⚙; on the buttons it shows while no picture is set, or always with "Show names on camera buttons".</li>
       <li><b>MAIN</b> buttons: exactly one lit, the program camera. Pressing the lit one does nothing
           (the program can't show "nothing"). If the program is not a camera (e.g. Black, bars), none are lit.</li>
       <li><b>PIP</b> buttons: pressing an unlit one sets it as the PiP source and puts the PiP on air;
@@ -146,7 +154,7 @@
       <li><b>Preset buttons</b>: store main camera, PiP camera, PiP on/off, X, Y, size and crop. The
           thumbnail is a picture of the preview at save time (drawn from the camera pictures). In OBS it
           could instead be a real frame of the ATEM video — see question 1.</li>
-      <li><b>⚙ settings</b>: a picture per camera, used on the MAIN and PIP buttons, in the preview and
+      <li><b>⚙ settings</b>: a name and a picture per camera; the picture is used on the camera buttons, in the preview and
           therefore in the preset thumbnails. In the plugin these would be PNG file paths saved in the
           plugin settings; here they are kept in this browser only.</li>
       <li>Open question — preset thumbnails: picture composed from the camera PNGs (as here), or a real
@@ -166,8 +174,8 @@
       </div>
 
       <div class="panel-body" id="body">
-        <div class="bus program" id="busMain" role="group" aria-label="Main camera"><span class="bus-label">MAIN</span></div>
-        <div class="bus pip" id="busPip" role="group" aria-label="PiP camera"><span class="bus-label">PIP</span></div>
+        <div class="bus program" id="busMain" role="group" aria-label="Main camera"></div>
+        <div class="bus pip" id="busPip" role="group" aria-label="PiP camera"></div>
 
         <div class="warn" id="notDve" hidden>
           Upstream key 1 is not a DVE key, so position and size have no effect.
@@ -192,9 +200,11 @@
 
       <div class="settings" id="settings" hidden>
         <div class="settings-head">PiP settings <button id="closeSettings">Done</button></div>
-        <p>A picture for each camera. It is shown on the MAIN and PIP buttons, in the preview and in
-           the thumbnails of saved buttons. PNG, any size — shown as 16:9.</p>
+        <p>A name and a picture for each camera. The picture is shown on the camera buttons, in the
+           preview and in the thumbnails of saved buttons (PNG, any size — shown as 16:9). The name
+           is used in tooltips and wherever a camera has no picture.</p>
         <div id="imageRows"></div>
+        <label class="check"><input type="checkbox" id="showNames"> Show names on camera buttons</label>
       </div>
     </div>
   </div>
@@ -223,8 +233,7 @@
     const buttons = CAMS.map((cam) => {
       const b = document.createElement('button');
       b.className = 'cam';
-      b.innerHTML = `<span>${cam.short}</span>`;
-      b.title = cam.name;
+      b.innerHTML = '<span></span>';
       b.addEventListener('click', () => {
         const s = model.state;
         if (kind === 'main') {
@@ -247,7 +256,11 @@
         const img = model.imageFor(cam.id);
         b.style.backgroundImage = img ? `url("${img}")` : '';
         b.style.backgroundColor = img ? '' : cam.color;
-        b.querySelector('span').hidden = !!img; // the picture identifies the camera
+        const name = model.labelFor(cam.id);
+        const span = b.querySelector('span');
+        span.textContent = name;
+        span.hidden = !!img && !model.showNames; // a picture identifies the camera on its own
+        b.title = `${kind === 'main' ? 'Main' : 'PiP'}: ${name}`;
       }
     };
   }
@@ -416,7 +429,7 @@
     ctx.font = `bold ${Math.max(8, dst.h / 4)}px Segoe UI, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(input.short, dst.x + dst.w / 2, dst.y + dst.h / 2);
+    ctx.fillText(model.labelFor(input.id), dst.x + dst.w / 2, dst.y + dst.h / 2);
   }
 
   // A "screenshot" of the program as this panel would show it.
@@ -453,7 +466,7 @@
   }
 
   function describe(p) {
-    const name = (id) => inputById(id).short;
+    const name = (id) => model.labelFor(id);
     return `Main ${name(p.programInput)} · PiP ${p.onAir ? name(p.pipInput) : 'off'} · ` +
       `X ${p.positionX.toFixed(1)} Y ${p.positionY.toFixed(1)} · size ${p.sizeX.toFixed(2)}` +
       (CROP_FIELDS.some((f) => p[f] > 0) ? ' · cropped' : '');
@@ -526,10 +539,14 @@
   const imageRows = CAMS.map((cam) => {
     const row = document.createElement('div');
     row.className = 'img-row';
-    row.innerHTML = `<div class="thumb"></div><span>${cam.name}</span>` +
-      `<label class="file-btn">Choose PNG…<input type="file" accept=".png,image/png" data-cam="${cam.id}"></label>` +
-      `<button>Clear</button>`;
-    const input = row.querySelector('input');
+    row.innerHTML = `<div class="thumb"></div><div class="fields">` +
+      `<input type="text" maxlength="20" data-name="${cam.id}" placeholder="${cam.name}" aria-label="Name for ${cam.name}">` +
+      `<div class="actions"><label class="file-btn">Choose PNG…<input type="file" accept=".png,image/png" data-cam="${cam.id}"></label>` +
+      `<button>Clear picture</button></div></div>`;
+    const nameInput = row.querySelector('input[type=text]');
+    nameInput.value = model.labels[cam.id] || '';
+    nameInput.addEventListener('input', () => model.setLabel(cam.id, nameInput.value));
+    const input = row.querySelector('input[type=file]');
     input.addEventListener('change', async () => {
       const file = input.files[0];
       input.value = '';
@@ -540,7 +557,7 @@
         model.log(`could not read ${file.name}`, 'dev');
       }
     });
-    row.querySelector('button').addEventListener('click', () => model.setImage(cam.id, null));
+    row.querySelector('.actions button').addEventListener('click', () => model.setImage(cam.id, null));
     $('imageRows').appendChild(row);
     return [cam, row.querySelector('.thumb')];
   });
@@ -551,6 +568,8 @@
       thumb.style.backgroundColor = img ? '' : cam.color;
     }
   }
+  $('showNames').checked = model.showNames;
+  $('showNames').addEventListener('change', (e) => model.setShowNames(e.target.checked));
   headerButtons.settings.addEventListener('click', () => { $('settings').hidden = false; $('closeSettings').focus(); });
   $('closeSettings').addEventListener('click', () => { $('settings').hidden = true; headerButtons.settings.focus(); });
 
