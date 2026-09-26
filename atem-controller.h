@@ -1,17 +1,15 @@
 #pragma once
 
 #include <windows.h>
-#include <comutil.h>
 #include <string>
 #include <vector>
 #include <functional>
 #include <mutex>
-#include <atomic>
-#include <thread>
 
-// Forward-declare BMD COM interfaces (from ATEM SDK headers)
-// User must have the SDK installed; these come from BMDSwitcherAPI.h
+// BMD COM interfaces, from the ATEM SDK include folder
 #include "BMDSwitcherAPI.h"
+
+#include "atem-pip.h"
 
 // ── Data Types ───────────────────────────────────────────────
 
@@ -23,42 +21,30 @@ struct AtemMacroInfo {
     bool hasUnsupportedOps;
 };
 
+struct AtemMacroRunStatus {
+    int index = -1;              // -1 when idle
+    bool waitingForUser = false; // macro paused on a "user wait" step
+};
+
 enum class AtemState {
     Disconnected,
     Connecting,
     Connected
 };
 
-// ── Callback interface for macro player state changes ────────
-
-class MacroPlayerCallback : public IBMDSwitcherMacroPoolCallback {
-public:
-    using OnChangeFunc = std::function<void()>;
-
-    MacroPlayerCallback(OnChangeFunc onChange);
-
-    // IUnknown
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** ppv) override;
-    ULONG STDMETHODCALLTYPE AddRef() override;
-    ULONG STDMETHODCALLTYPE Release() override;
-
-    // IBMDSwitcherMacroPoolCallback
-    HRESULT STDMETHODCALLTYPE Notify(
-        BMDSwitcherMacroPoolEventType eventType,
-        unsigned int index,
-        IBMDSwitcherTransferMacro* macroTransfer) override;
-
-private:
-    OnChangeFunc m_onChange;
-    std::atomic<ULONG> m_refCount{1};
-};
-
 // ── Main ATEM Controller ─────────────────────────────────────
+//
+// Owns the connection to one switcher and the macro API. The PiP API lives in
+// AtemPip (see pip()), attached to the same switcher while connected.
+//
+// Qt-free on purpose so atem-cli can use it. Callbacks may fire on a BMD SDK
+// thread; UI code must marshal them (AtemSession does).
 
 class AtemController {
 public:
     using StateChangeCallback = std::function<void(AtemState)>;
     using MacroUpdateCallback = std::function<void()>;
+    using ConnectionLostCallback = std::function<void()>;
     using TraceCallback = std::function<void(const std::string&)>;
 
     AtemController();
@@ -68,6 +54,11 @@ public:
     bool connectUSB();
     bool connectIP(const std::string& address);
     void disconnect();
+    // Called after the switcher reported it disconnected (cable pulled, power).
+    void handleConnectionLost();
+    // Release every COM object, including the discovery object. Call before
+    // COM is torn down (OBS exit); the controller cannot connect afterwards.
+    void shutdown();
 
     AtemState state() const { return m_state; }
     std::string connectedAddress() const { return m_address; }
@@ -78,26 +69,34 @@ public:
     std::vector<AtemMacroInfo> getMacros();
     bool runMacro(uint32_t index);
     bool stopMacro();
-    bool isRunning() const;
-    int runningMacroIndex() const;
+    AtemMacroRunStatus runStatus() const;
+
+    // Picture-in-picture (upstream key 1 as a DVE)
+    AtemPip& pip() { return m_pip; }
 
     // Callbacks
-    void setStateChangeCallback(StateChangeCallback cb) { m_onStateChange = cb; }
-    void setMacroUpdateCallback(MacroUpdateCallback cb) { m_onMacroUpdate = cb; }
-    void setTraceCallback(TraceCallback cb) { m_onTrace = cb; }
+    void setStateChangeCallback(StateChangeCallback cb) { m_onStateChange = std::move(cb); }
+    void setMacroUpdateCallback(MacroUpdateCallback cb) { m_onMacroUpdate = std::move(cb); }
+    void setConnectionLostCallback(ConnectionLostCallback cb) { m_onConnectionLost = std::move(cb); }
+    void setTraceCallback(TraceCallback cb);
 
 private:
     void trace(const char* format, ...);
     bool connectToAddress(const std::string& address);
     void cleanup();
+    void notifyState();
 
     IBMDSwitcherDiscovery*    m_discovery = nullptr;
     IBMDSwitcher*             m_switcher = nullptr;
     IBMDSwitcherMacroPool*    m_macroPool = nullptr;
     IBMDSwitcherMacroControl* m_macroControl = nullptr;
 
-    MacroPlayerCallback*      m_poolCallback = nullptr;
+    IBMDSwitcherMacroPoolCallback* m_poolCallback = nullptr;
+    IBMDSwitcherCallback*          m_switcherCallback = nullptr;
 
+    AtemPip m_pip;
+
+    bool m_comInitialized = false;
     AtemState m_state = AtemState::Disconnected;
     std::string m_address;
     std::string m_modelName;
@@ -106,5 +105,6 @@ private:
 
     StateChangeCallback m_onStateChange;
     MacroUpdateCallback m_onMacroUpdate;
+    ConnectionLostCallback m_onConnectionLost;
     TraceCallback m_onTrace;
 };

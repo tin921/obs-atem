@@ -1,40 +1,64 @@
 #include "atem-controller.h"
-#include <comdef.h>
-#include <sstream>
-#include <obs-module.h>
+#include "bmd-util.h"
+#include "obs-log.h"
 
-// ── MacroPlayerCallback ──────────────────────────────────────
+#include <cstdarg>
+#include <cstdio>
 
-MacroPlayerCallback::MacroPlayerCallback(OnChangeFunc onChange)
-    : m_onChange(std::move(onChange)) {}
+namespace {
 
-HRESULT MacroPlayerCallback::QueryInterface(REFIID iid, void** ppv) {
-    if (iid == IID_IUnknown || iid == IID_IBMDSwitcherMacroPoolCallback) {
-        *ppv = static_cast<IBMDSwitcherMacroPoolCallback*>(this);
-        AddRef();
-        return S_OK;
+using MacroPoolCallback = BmdCallback<IBMDSwitcherMacroPoolCallback,
+                                      BMDSwitcherMacroPoolEventType, unsigned int, IBMDSwitcherTransferMacro*>;
+using SwitcherCallback  = BmdCallback<IBMDSwitcherCallback, BMDSwitcherEventType, BMDSwitcherVideoMode>;
+
+std::string connectFailureText(BMDSwitcherConnectToFailure reason) {
+    switch (reason) {
+    case bmdSwitcherConnectToFailureNoResponse:
+        return "No response from ATEM. Check USB/network connection.";
+    case bmdSwitcherConnectToFailureIncompatibleFirmware:
+        return "Incompatible firmware. Update the ATEM (ATEM Setup) or ATEM Software Control.";
+    case bmdSwitcherConnectToFailureCorruptData:
+        return "Corrupt data received from ATEM.";
+    case bmdSwitcherConnectToFailureStateSync:
+    case bmdSwitcherConnectToFailureStateSyncTimedOut:
+        return "ATEM answered but the initial state sync failed. Try reconnecting.";
+    default:
+        return "Connection failed (code: " + std::to_string(static_cast<long>(reason)) + ")";
     }
-    *ppv = nullptr;
-    return E_NOINTERFACE;
 }
 
-ULONG MacroPlayerCallback::AddRef() {
-    return ++m_refCount;
+} // namespace
+
+// ── AtemController ───────────────────────────────────────────
+
+AtemController::AtemController() {
+    // Inside OBS the UI thread is already an STA, so this returns
+    // RPC_E_CHANGED_MODE and changes nothing. atem-cli has no COM yet.
+    m_comInitialized = SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
+
+    HRESULT hr = CoCreateInstance(
+        __uuidof(CBMDSwitcherDiscovery), nullptr,
+        CLSCTX_ALL,
+        __uuidof(IBMDSwitcherDiscovery),
+        reinterpret_cast<void**>(&m_discovery)
+    );
+
+    if (FAILED(hr)) {
+        m_lastError = "Failed to create BMDSwitcherDiscovery. "
+                      "Is the ATEM Software installed?";
+        m_discovery = nullptr;
+    }
+
+    m_pip.setTraceCallback([this](const std::string& msg) { trace("%s", msg.c_str()); });
 }
 
-ULONG MacroPlayerCallback::Release() {
-    ULONG count = --m_refCount;
-    if (count == 0) delete this;
-    return count;
+AtemController::~AtemController() {
+    shutdown();
+    if (m_comInitialized) CoUninitialize();
 }
 
-HRESULT MacroPlayerCallback::Notify(
-    BMDSwitcherMacroPoolEventType /*eventType*/,
-    unsigned int /*index*/,
-    IBMDSwitcherTransferMacro* /*macroTransfer*/)
-{
-    if (m_onChange) m_onChange();
-    return S_OK;
+void AtemController::setTraceCallback(TraceCallback cb) {
+    m_onTrace = std::move(cb);
 }
 
 void AtemController::trace(const char* format, ...) {
@@ -50,33 +74,8 @@ void AtemController::trace(const char* format, ...) {
     }
 }
 
-// ── AtemController ───────────────────────────────────────────
-
-AtemController::AtemController() {
-    // COM should already be initialized by OBS (STA), but ensure MTA for our thread
-    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-
-    // Create the switcher discovery instance
-    HRESULT hr = CoCreateInstance(
-        CLSID_CBMDSwitcherDiscovery, nullptr,
-        CLSCTX_ALL,
-        IID_IBMDSwitcherDiscovery,
-        reinterpret_cast<void**>(&m_discovery)
-    );
-
-    if (FAILED(hr)) {
-        m_lastError = "Failed to create BMDSwitcherDiscovery. "
-                      "Is the ATEM Software installed?";
-        m_discovery = nullptr;
-    }
-}
-
-AtemController::~AtemController() {
-    disconnect();
-    if (m_discovery) {
-        m_discovery->Release();
-        m_discovery = nullptr;
-    }
+void AtemController::notifyState() {
+    if (m_onStateChange) m_onStateChange(m_state);
 }
 
 bool AtemController::connectUSB() {
@@ -103,100 +102,107 @@ bool AtemController::connectToAddress(const std::string& address) {
 
     m_state = AtemState::Connecting;
     m_address = address.empty() ? "USB" : address;
-    if (m_onStateChange) m_onStateChange(m_state);
+    notifyState();
 
-    _bstr_t bstrAddr(address.c_str());
+    BSTR bstrAddr = bmdMakeString(address);
     BMDSwitcherConnectToFailure failReason = bmdSwitcherConnectToFailureNoResponse;
 
     trace("[ATEM Macros] calling ConnectTo...");
     HRESULT hr = m_discovery->ConnectTo(bstrAddr, &m_switcher, &failReason);
-    trace("[ATEM Macros] ConnectTo hr=0x%08X switcher=%p failReason=%d",
-         (unsigned)hr, (void*)m_switcher, (int)failReason);
+    SysFreeString(bstrAddr);
+    trace("[ATEM Macros] ConnectTo hr=0x%08X switcher=%p failReason=0x%08X",
+          (unsigned)hr, (void*)m_switcher, (unsigned)failReason);
 
     if (FAILED(hr) || !m_switcher) {
-        m_state = AtemState::Disconnected;
-        switch (failReason) {
-        case bmdSwitcherConnectToFailureNoResponse:
-            m_lastError = "No response from ATEM. Check USB/network connection.";
-            break;
-        case bmdSwitcherConnectToFailureIncompatibleFirmware:
-            m_lastError = "Incompatible firmware. Update ATEM Software Control.";
-            break;
-        default:
-            m_lastError = "Connection failed (code: " + std::to_string(failReason) + ")";
-            break;
-        }
+        cleanup();
+        m_lastError = connectFailureText(failReason);
         trace("[ATEM Macros] ERROR: %s", m_lastError.c_str());
-        if (m_onStateChange) m_onStateChange(m_state);
+        notifyState();
         return false;
     }
 
-    // Get model name
     BSTR productName = nullptr;
-    if (SUCCEEDED(m_switcher->GetProductName(&productName)) && productName) {
-        _bstr_t nameWrapper(productName, false);
-        m_modelName = static_cast<const char*>(nameWrapper);
+    if (SUCCEEDED(m_switcher->GetProductName(&productName))) {
+        m_modelName = bmdTakeString(productName);
     }
     trace("[ATEM Macros] model='%s'", m_modelName.c_str());
 
-    // Get macro pool interface
-    trace("[ATEM Macros] getting MacroPool...");
-    hr = m_switcher->QueryInterface(
-        IID_IBMDSwitcherMacroPool,
-        reinterpret_cast<void**>(&m_macroPool)
-    );
-    trace("[ATEM Macros] MacroPool hr=0x%08X", (unsigned)hr);
+    hr = m_switcher->QueryInterface(__uuidof(IBMDSwitcherMacroPool),
+                                    reinterpret_cast<void**>(&m_macroPool));
     if (FAILED(hr)) {
+        cleanup();
         m_lastError = "Failed to get macro pool interface.";
-        trace("[ATEM Macros] ERROR: %s", m_lastError.c_str());
-        cleanup();
-        if (m_onStateChange) m_onStateChange(m_state);
+        trace("[ATEM Macros] ERROR: %s hr=0x%08X", m_lastError.c_str(), (unsigned)hr);
+        notifyState();
         return false;
     }
 
-    // Get macro control interface
-    trace("[ATEM Macros] getting MacroControl...");
-    hr = m_switcher->QueryInterface(
-        IID_IBMDSwitcherMacroControl,
-        reinterpret_cast<void**>(&m_macroControl)
-    );
-    trace("[ATEM Macros] MacroControl hr=0x%08X", (unsigned)hr);
+    hr = m_switcher->QueryInterface(__uuidof(IBMDSwitcherMacroControl),
+                                    reinterpret_cast<void**>(&m_macroControl));
     if (FAILED(hr)) {
-        m_lastError = "Failed to get macro control interface.";
-        trace("[ATEM Macros] ERROR: %s", m_lastError.c_str());
         cleanup();
-        if (m_onStateChange) m_onStateChange(m_state);
+        m_lastError = "Failed to get macro control interface.";
+        trace("[ATEM Macros] ERROR: %s hr=0x%08X", m_lastError.c_str(), (unsigned)hr);
+        notifyState();
         return false;
     }
 
-    blog(LOG_INFO, "[ATEM Macros] connectToAddress: registering callback...");
-    m_poolCallback = new MacroPlayerCallback([this]() {
-        if (m_onMacroUpdate) m_onMacroUpdate();
-    });
+    m_poolCallback = new MacroPoolCallback(
+        [this](BMDSwitcherMacroPoolEventType, unsigned int, IBMDSwitcherTransferMacro*) {
+            if (m_onMacroUpdate) m_onMacroUpdate();
+        });
     m_macroPool->AddCallback(m_poolCallback);
+
+    m_switcherCallback = new SwitcherCallback(
+        [this](BMDSwitcherEventType type, BMDSwitcherVideoMode) {
+            if (type == bmdSwitcherEventTypeDisconnected && m_onConnectionLost)
+                m_onConnectionLost();
+        });
+    m_switcher->AddCallback(m_switcherCallback);
+
+    // PiP is optional: a switcher without a DVE keyer still runs macros.
+    m_pip.attach(m_switcher);
 
     m_state = AtemState::Connected;
     m_lastError.clear();
     trace("[ATEM Macros] connected successfully");
-    if (m_onStateChange) m_onStateChange(m_state);
+    notifyState();
     return true;
 }
 
 void AtemController::disconnect() {
     std::lock_guard<std::mutex> lock(m_mutex);
+    bool wasConnected = m_state != AtemState::Disconnected;
     cleanup();
-    if (m_onStateChange) m_onStateChange(m_state);
+    if (wasConnected) notifyState();
+}
+
+void AtemController::handleConnectionLost() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_state == AtemState::Disconnected) return;
+    cleanup();
+    m_lastError = "Connection to the ATEM was lost.";
+    trace("[ATEM Macros] %s", m_lastError.c_str());
+    notifyState();
+}
+
+void AtemController::shutdown() {
+    disconnect();
+    std::lock_guard<std::mutex> lock(m_mutex);
+    bmdRelease(m_discovery);
 }
 
 void AtemController::cleanup() {
-    if (m_macroPool && m_poolCallback) {
-        m_macroPool->RemoveCallback(m_poolCallback);
-        m_poolCallback->Release();
-        m_poolCallback = nullptr;
-    }
-    if (m_macroControl) { m_macroControl->Release(); m_macroControl = nullptr; }
-    if (m_macroPool)    { m_macroPool->Release();    m_macroPool = nullptr; }
-    if (m_switcher)     { m_switcher->Release();     m_switcher = nullptr; }
+    m_pip.detach();
+
+    if (m_switcher && m_switcherCallback) m_switcher->RemoveCallback(m_switcherCallback);
+    if (m_macroPool && m_poolCallback) m_macroPool->RemoveCallback(m_poolCallback);
+    bmdRelease(m_switcherCallback);
+    bmdRelease(m_poolCallback);
+
+    bmdRelease(m_macroControl);
+    bmdRelease(m_macroPool);
+    bmdRelease(m_switcher);
 
     m_state = AtemState::Disconnected;
     m_modelName.clear();
@@ -209,37 +215,30 @@ std::vector<AtemMacroInfo> AtemController::getMacros() {
 
     if (!m_macroPool) return result;
 
-    // Get the number of macro slots
     uint32_t maxMacros = 0;
     if (FAILED(m_macroPool->GetMaxCount(&maxMacros))) return result;
 
     for (uint32_t i = 0; i < maxMacros; i++) {
         BOOL valid = FALSE;
-        if (FAILED(m_macroPool->IsValid(i, &valid))) continue;
-        if (!valid) continue;
+        if (FAILED(m_macroPool->IsValid(i, &valid)) || !valid) continue;
 
         AtemMacroInfo info;
         info.index = i;
         info.isUsed = true;
 
-        // Get name
         BSTR name = nullptr;
-        if (SUCCEEDED(m_macroPool->GetName(i, &name)) && name) {
-            _bstr_t nameWrapper(name, false);
-            info.name = static_cast<const char*>(nameWrapper);
+        if (SUCCEEDED(m_macroPool->GetName(i, &name))) {
+            info.name = bmdTakeString(name);
         }
         if (info.name.empty()) {
             info.name = "Macro " + std::to_string(i + 1);
         }
 
-        // Get description
         BSTR desc = nullptr;
-        if (SUCCEEDED(m_macroPool->GetDescription(i, &desc)) && desc) {
-            _bstr_t descWrapper(desc, false);
-            info.description = static_cast<const char*>(descWrapper);
+        if (SUCCEEDED(m_macroPool->GetDescription(i, &desc))) {
+            info.description = bmdTakeString(desc);
         }
 
-        // Check for unsupported ops
         BOOL hasUnsupported = FALSE;
         m_macroPool->HasUnsupportedOps(i, &hasUnsupported);
         info.hasUnsupportedOps = (hasUnsupported != FALSE);
@@ -253,39 +252,31 @@ std::vector<AtemMacroInfo> AtemController::getMacros() {
 bool AtemController::runMacro(uint32_t index) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_macroControl) return false;
-    return SUCCEEDED(m_macroControl->Run(index));
+    HRESULT hr = m_macroControl->Run(index);
+    if (FAILED(hr)) trace("[ATEM Macros] Run(%u) failed hr=0x%08X", index, (unsigned)hr);
+    return SUCCEEDED(hr);
 }
 
 bool AtemController::stopMacro() {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_macroControl) return false;
-    return SUCCEEDED(m_macroControl->StopRunning());
+    HRESULT hr = m_macroControl->StopRunning();
+    if (FAILED(hr)) trace("[ATEM Macros] StopRunning failed hr=0x%08X", (unsigned)hr);
+    return SUCCEEDED(hr);
 }
 
-bool AtemController::isRunning() const {
+AtemMacroRunStatus AtemController::runStatus() const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (!m_macroControl) return false;
+    AtemMacroRunStatus result;
+    if (!m_macroControl) return result;
 
-    BMDSwitcherMacroRunStatus status;
-    BOOL loop = FALSE;
-    unsigned int idx = 0;
-    if (SUCCEEDED(m_macroControl->GetRunStatus(&status, &loop, &idx))) {
-        return status == bmdSwitcherMacroRunStatusRunning;
-    }
-    return false;
-}
-
-int AtemController::runningMacroIndex() const {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if (!m_macroControl) return -1;
-
-    BMDSwitcherMacroRunStatus status;
+    BMDSwitcherMacroRunStatus status = bmdSwitcherMacroRunStatusIdle;
     BOOL loop = FALSE;
     unsigned int index = 0;
-    if (SUCCEEDED(m_macroControl->GetRunStatus(&status, &loop, &index))) {
-        if (status == bmdSwitcherMacroRunStatusRunning) {
-            return static_cast<int>(index);
-        }
+    if (SUCCEEDED(m_macroControl->GetRunStatus(&status, &loop, &index)) &&
+        status != bmdSwitcherMacroRunStatusIdle) {
+        result.index = static_cast<int>(index);
+        result.waitingForUser = status == bmdSwitcherMacroRunStatusWaitingForUser;
     }
-    return -1;
+    return result;
 }

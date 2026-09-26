@@ -87,8 +87,8 @@ static const char* SETTINGS_STYLE = R"(
     }
 )";
 
-SettingsDialog::SettingsDialog(AtemController* atem, QWidget* parent)
-    : QDialog(parent), m_atem(atem)
+SettingsDialog::SettingsDialog(AtemSession* session, QWidget* parent)
+    : QDialog(parent), m_session(session)
 {
     setWindowTitle("ATEM Connection Settings");
     setMinimumWidth(380);
@@ -100,7 +100,8 @@ void SettingsDialog::buildUI() {
     auto* layout = new QVBoxLayout(this);
     layout->setSpacing(8);
 
-    bool isConnected = m_atem->state() == AtemState::Connected;
+    AtemController& atem = m_session->atem();
+    bool isConnected = atem.state() == AtemState::Connected;
 
     // ── Connection Status Group ──────────────────────────────
     auto* statusGroup = new QGroupBox("Connection Status", this);
@@ -123,15 +124,15 @@ void SettingsDialog::buildUI() {
 
     if (isConnected) {
         addRow("Status:", "Connected", "success");
-        addRow("Model:", QString::fromStdString(m_atem->modelName()));
-        addRow("Address:", QString::fromStdString(m_atem->connectedAddress()));
+        addRow("Model:", QString::fromStdString(atem.modelName()));
+        addRow("Address:", QString::fromStdString(atem.connectedAddress()));
 
-        auto macros = m_atem->getMacros();
+        auto macros = atem.getMacros();
         addRow("Macros:", QString::number(macros.size()) + " loaded");
     } else {
         addRow("Status:", "Disconnected", "error");
-        if (!m_atem->lastError().empty()) {
-            addRow("Last Error:", QString::fromStdString(m_atem->lastError()), "error");
+        if (!atem.lastError().empty()) {
+            addRow("Last Error:", QString::fromStdString(atem.lastError()), "error");
         }
     }
 
@@ -164,7 +165,7 @@ void SettingsDialog::buildUI() {
         connectLayout->addWidget(divider);
 
         auto* ipRow = new QHBoxLayout();
-        m_ipInput = new QLineEdit(connectGroup);
+        m_ipInput = new QLineEdit(m_session->lastIP(), connectGroup);
         m_ipInput->setPlaceholderText("192.168.10.240");
         ipRow->addWidget(m_ipInput, 1);
 
@@ -203,8 +204,8 @@ void SettingsDialog::buildUI() {
     tips += "  Default ATEM IP is usually 192.168.10.240.\n";
     tips += "\n";
 
-    if (!m_atem->lastError().empty()) {
-        tips += "Last Error:\n  " + QString::fromStdString(m_atem->lastError()) + "\n\n";
+    if (!atem.lastError().empty()) {
+        tips += "Last Error:\n  " + QString::fromStdString(atem.lastError()) + "\n\n";
     }
 
     tips += "SDK Path:\n";

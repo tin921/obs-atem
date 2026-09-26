@@ -9,7 +9,7 @@
 #include <QGroupBox>
 #include <QTextEdit>
 
-#include "atem-controller.h"
+#include "atem-session.h"
 
 class SettingsDialog : public QDialog {
     Q_OBJECT
@@ -21,7 +21,7 @@ public:
         Disconnect
     };
 
-    explicit SettingsDialog(AtemController* atem, QWidget* parent = nullptr);
+    explicit SettingsDialog(AtemSession* session, QWidget* parent = nullptr);
 
     Action selectedAction() const { return m_action; }
     QString ipAddress() const { return m_ipInput ? m_ipInput->text().trimmed() : ""; }
@@ -30,7 +30,7 @@ private:
     void buildUI();
     void applyStyle();
 
-    AtemController* m_atem;
+    AtemSession* m_session;
     Action m_action = Action::None;
 
     QLineEdit*  m_ipInput = nullptr;

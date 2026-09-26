@@ -1,9 +1,7 @@
 #pragma once
 
-#include <QDockWidget>
 #include <QWidget>
 #include <QVBoxLayout>
-#include <QHBoxLayout>
 #include <QGridLayout>
 #include <QPushButton>
 #include <QLabel>
@@ -12,9 +10,11 @@
 #include <QToolButton>
 #include <QFrame>
 #include <QTextEdit>
-#include <memory>
+#include <vector>
 
-#include "atem-controller.h"
+#include "atem-session.h"
+
+class PanelHeader;
 
 // ── Individual Macro Button ──────────────────────────────────
 
@@ -30,55 +30,46 @@ private:
     bool m_running = false;
 };
 
-// ── Main Dock Widget ─────────────────────────────────────────
+// ── Macro panel ──────────────────────────────────────────────
+//
+// Dock content widget: OBS 30+ wraps it in its own dock (see plugin-main.cpp),
+// the harness wraps it in a QDockWidget. Also owns the connection UI (connect
+// view, settings dialog) for the shared AtemSession.
 
-class AtemMacroDock : public QDockWidget {
+class AtemMacroDock : public QWidget {
     Q_OBJECT
 public:
-    explicit AtemMacroDock(QWidget* parent = nullptr);
-    ~AtemMacroDock();
+    explicit AtemMacroDock(AtemSession* session, QWidget* parent = nullptr);
 
 private slots:
     void onConnectUSB();
     void onConnectIP();
-    void onDisconnect();
-    void onRefresh();
     void onSettings();
     void onStopMacro();
     void onMacroClicked(uint32_t index);
-    void pollUpdate();
+    void onConnectionChanged(AtemState state);
+    void onTrace(const QString& line);
+    void rebuildContent();
+    void pollRunStatus();
 
 private:
     void buildUI();
+    void clearContent();
     void showConnectView();
-    void showMacroView();
+    void showMacroView(const std::vector<AtemMacroInfo>& macros);
     void showEmptyView();
-    void refreshMacros();
     void updateStatusBar();
-    void applyStyleSheet();
 
-    // Controller
-    std::unique_ptr<AtemController> m_atem;
-
-    // UI elements
-    QWidget*      m_centralWidget = nullptr;
-    QVBoxLayout*  m_mainLayout = nullptr;
+    AtemSession* m_session;
 
     // Header
-    QFrame*       m_headerBar = nullptr;
-    QLabel*       m_statusDot = nullptr;
-    QLabel*       m_statusLabel = nullptr;
+    PanelHeader*  m_header = nullptr;
     QToolButton*  m_settingsBtn = nullptr;
     QToolButton*  m_refreshBtn = nullptr;
 
-    // Content area (swapped between connect / macro views)
+    // Content area (swapped between connect / macro / empty views)
     QWidget*      m_contentArea = nullptr;
     QVBoxLayout*  m_contentLayout = nullptr;
-
-    // Macro grid
-    QScrollArea*  m_scrollArea = nullptr;
-    QWidget*      m_gridWidget = nullptr;
-    QGridLayout*  m_gridLayout = nullptr;
     std::vector<MacroButton*> m_macroButtons;
 
     // Player bar (bottom)
@@ -88,12 +79,8 @@ private:
 
     // Trace area
     QTextEdit*    m_traceArea = nullptr;
-    QPushButton*  m_copyBtn = nullptr;
 
-    // Poll timer
     QTimer*       m_pollTimer = nullptr;
 
-    // Cached state
     std::vector<AtemMacroInfo> m_cachedMacros;
-    int m_lastRunningIndex = -1;
 };
