@@ -39,6 +39,11 @@ enum class AtemState {
 //
 // Qt-free on purpose so atem-cli can use it. Callbacks may fire on a BMD SDK
 // thread; UI code must marshal them (AtemSession does).
+//
+// COM must already be initialised on the calling thread (OBS does it; the
+// harness and CLI do it in main). The controller never uninitialises COM:
+// CoUninitialize while BMDSwitcherAPI's network threads are still winding
+// down crashes the process (seen with Ethernet connections).
 
 class AtemController {
 public:
@@ -96,7 +101,6 @@ private:
 
     AtemPip m_pip;
 
-    bool m_comInitialized = false;
     AtemState m_state = AtemState::Disconnected;
     std::string m_address;
     std::string m_modelName;

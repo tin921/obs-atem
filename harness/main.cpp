@@ -98,6 +98,7 @@ int main(int argc, char** argv) {
         session.shutdown();
     }
 
-    CoUninitialize();
+    // No CoUninitialize: doing it while BMDSwitcherAPI's network threads wind
+    // down crashes the process (same reason as in atem-cli). Exit cleans up.
     return rc;
 }

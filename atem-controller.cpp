@@ -32,10 +32,6 @@ std::string connectFailureText(BMDSwitcherConnectToFailure reason) {
 // ── AtemController ───────────────────────────────────────────
 
 AtemController::AtemController() {
-    // Inside OBS the UI thread is already an STA, so this returns
-    // RPC_E_CHANGED_MODE and changes nothing. atem-cli has no COM yet.
-    m_comInitialized = SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
-
     HRESULT hr = CoCreateInstance(
         __uuidof(CBMDSwitcherDiscovery), nullptr,
         CLSCTX_ALL,
@@ -54,7 +50,6 @@ AtemController::AtemController() {
 
 AtemController::~AtemController() {
     shutdown();
-    if (m_comInitialized) CoUninitialize();
 }
 
 void AtemController::setTraceCallback(TraceCallback cb) {

@@ -128,6 +128,11 @@ int main(int argc, char** argv)
         return 2;
     }
 
+    // COM for the BMD SDK. Deliberately never uninitialised: CoUninitialize
+    // while the SDK's network threads wind down crashes the process; exiting
+    // cleans up instead.
+    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+
     g_log.open("atem-cli.log", std::ios::trunc);
     LOG("=== atem-cli " + command + " ===");
 
