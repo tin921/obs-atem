@@ -5,8 +5,8 @@ ATEM Mini. It talks to the switcher directly through Blackmagic's
 BMDSwitcherAPI COM SDK — no middleware server, no external process.
 
 - **ATEM Macros** — one-click buttons for the macros stored on the ATEM
-- **ATEM PiP** *(in development)* — pick the main input and the
-  picture-in-picture source, then move, scale and crop the PiP box
+- **ATEM PiP** — pick the main and picture-in-picture cameras, move, scale
+  and crop the PiP box, and recall saved setups with one click
 
 ---
 
@@ -20,13 +20,23 @@ BMDSwitcherAPI COM SDK — no middleware server, no external process.
 - **Connection-loss detection** — shows the error and a reconnect button if the ATEM goes away
 - **Settings (⚙)** — connection status, manual IP connect, troubleshooting info
 
-**ATEM PiP** *(skeleton — layout still being designed)*
+**ATEM PiP**
 
-- Main (program) input and PiP (upstream key fill) input
-- PiP on/off air
-- Position X/Y, size and crop with sliders plus exact number entry
+- **Camera buttons** — top row picks the main camera, second row the PiP
+  camera; press the lit PiP camera to take the PiP off air
+- **Program preview** — drag the PiP box to move it (snaps to the safe area),
+  drag its corner to resize it
+- **Exact numbers** — X, Y, Size and crop Top/Bottom/Left/Right; arrow keys or
+  the mouse wheel on the focused box step X/Y by 0.1, Size by 0.01, crop by
+  0.1 (Shift ×10). Crop turns on by itself when any edge is non-zero
+- **Preset buttons** — "Save current to" stores cameras, PiP on/off, position,
+  size and crop on one of seven buttons, with a thumbnail of the program
+- **Settings (⚙)** — a name, colour and PNG picture per camera, used on the
+  buttons, in the preview and in the preset thumbnails
 - Loads the current values from the ATEM on connect and follows changes made
   elsewhere (ATEM Software Control, hardware buttons, macros)
+
+The layout reference is `mockups/index.html` (open it in a browser).
 
 Both panels are normal OBS docks: show them from **Docks**, then drag them anywhere.
 
@@ -149,7 +159,11 @@ the ATEM SDK comes with ATEM Software Control.
 ## Development tools
 
 **atem-harness.exe** hosts the exact panel sources in a bare Qt window, so you
-can run them under the Visual Studio debugger without OBS. Put your Qt `bin`
+can run them under the Visual Studio debugger without OBS. Its "ATEM log" dock
+shows every connection trace line and every SDK call the PiP panel sends. It
+connects to the real ATEM and shares the plugin's settings (connection, camera
+names/colours/pictures and presets). If a problem shows up in OBS but not in
+the harness, look at the OBS integration (`plugin-main.cpp`). Put your Qt `bin`
 folder on `PATH` (or run `windeployqt atem-harness.exe`) before starting it.
 
 **atem-cli.exe** checks the SDK layer against the real switcher:
@@ -204,12 +218,15 @@ obs-atem/
 ├── atem-session.h/cpp      Shared connection for all panels; SDK callbacks → Qt signals
 ├── panel-common.h/cpp      Shared panel stylesheet and header bar
 ├── macro-dock.h/cpp        ATEM Macros panel
-├── pip-dock.h/cpp          ATEM PiP panel (skeleton)
+├── pip-dock.h/cpp          ATEM PiP panel
+├── pip-preview.h/cpp       Program preview (drag/resize) and preset thumbnails
+├── pip-widgets.h/cpp       Camera/preset picture buttons, number boxes
+├── pip-settings.h/cpp      Camera names/colours/pictures and presets (saved)
 ├── settings-dialog.h/cpp   Connection settings + troubleshooting dialog
 ├── obs-log.h               blog() shim so panel code also builds outside OBS
 ├── harness/main.cpp        Standalone Qt host for the panels
 ├── cli/main.cpp            Command-line diagnostics
-├── mockups/                HTML layout prototypes for the PiP panel
+├── mockups/                PiP panel layout reference (index.html) and drafts
 └── scripts/gen-obs-libs.ps1  Generates OBS import libraries
 ```
 

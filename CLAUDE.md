@@ -6,8 +6,8 @@ ATEM Mini, talking to it directly (USB or Ethernet) through the BMDSwitcherAPI
 COM SDK. No middleware server, no browser dock, no external process.
 
 - **ATEM Macros** panel — trigger the macros stored on the ATEM
-- **ATEM PiP** panel (in development) — main input, PiP input, and the
-  position/size/crop of the PiP box
+- **ATEM PiP** panel — main and PiP camera, position/size/crop of the PiP
+  box, seven preset buttons; layout reference `mockups/index.html`
 
 The plugin is developed and tested against the real ATEM device only.
 
@@ -76,7 +76,7 @@ This is a hard constraint from OBS, not a preference.
   the UI thread with `QMetaObject::invokeMethod(..., Qt::QueuedConnection)`;
   panels only ever see Qt signals.
 - PiP change notifications are coalesced (one `pipChanged` per event-loop
-  pass) because slider drags produce bursts of fly/mask events.
+  pass) because preview drags produce bursts of fly/mask events.
 - `ConnectTo` blocks the UI thread and the controller holds its (non-recursive)
   mutex meanwhile. The SDK may pump messages during that call, so Qt timers can
   fire re-entrantly: every timer/slot that calls into the controller must bail
@@ -106,12 +106,17 @@ obs-atem/
 ├── atem-session.h/cpp          # Shared connection + Qt signals + saved settings
 ├── panel-common.h/cpp          # Shared stylesheet + PanelHeader (status dot, title)
 ├── macro-dock.h/cpp            # ATEM Macros panel (connect view, grid, player bar, trace log)
-├── pip-dock.h/cpp              # ATEM PiP panel skeleton + PipValueControl (slider + spin box)
+├── pip-dock.h/cpp              # ATEM PiP panel: camera rows, presets, fields, ⚙ page;
+│                               #   local view + ~30 Hz sends + echo holds
+├── pip-preview.h/cpp           # Program preview (drag/resize/nudge) + paintProgram()
+│                               #   shared with preset thumbnails; PipGeometry
+├── pip-widgets.h/cpp           # PictureButton (CamButton, PresetButton), PipSpinBox
+├── pip-settings.h/cpp          # Camera names/colours/pictures + presets (QSettings "pip/...")
 ├── settings-dialog.h/cpp       # ⚙ dialog: status, USB/IP connect, troubleshooting
 ├── obs-log.h                   # blog(): libobs inside OBS, stderr elsewhere
-├── harness/main.cpp            # atem-harness: panels in a bare QMainWindow
+├── harness/main.cpp            # atem-harness: both panels + "ATEM log" dock (SDK calls)
 ├── cli/main.cpp                # atem-cli: info | pip | run N | stop [--ip ADDR]
-├── mockups/                    # HTML/JS layout prototypes for the PiP panel
+├── mockups/                    # index.html = PiP layout reference; drafts.html = earlier A/B/C
 └── scripts/gen-obs-libs.ps1    # Generates obs.lib / obs-frontend-api.lib into build\
 ```
 
@@ -149,13 +154,30 @@ In SDK 10.2.1 position/size live on the *fly* parameters interface, not the
 DVE parameters interface (the manual: "most properties in this interface also
 take effect when the key type is set to DVE").
 
-The SDK manual gives **no numeric ranges**. The slider/spin limits in
-`pip-dock.cpp` (X ±16, Y ±9 on screen; crop T/B 0–18, L/R 0–32 on sliders)
-are ATEM Software Control's 16:9 values and MUST be checked against the real
-device (`atem-cli pip` prints the live values).
+The SDK manual gives **no numeric ranges**. The number-box limits in
+`pip-dock.cpp` (X ±32, Y ±18, size 0–1, crop T/B 0–38, L/R 0–52) and the
+preview's frame (X ±16, Y ±9, +Y up) are ATEM Software Control's 16:9 values
+and MUST be checked against the real device (`atem-cli pip` prints the live
+values).
 
-The panel layout is not final: pick one of the `mockups/` designs, then apply
-it to `pip-dock.cpp`.
+### PiP panel behaviour (implemented from `mockups/index.html`)
+
+- Camera rows are CAM 1–4 = ATEM inputs 1–4. Main row: one lit (program).
+  PiP row: lit = on air with that fill; pressing the lit one → `SetOnAir(FALSE)`,
+  pressing another → `SetInputFill` + `SetOnAir(TRUE)`. No separate on-air button.
+- Size always keeps the aspect ratio (SizeX = SizeY). Crop has no checkbox:
+  `SetMasked` follows "any crop edge > 0".
+- The panel edits a local `AtemPipState` view immediately, sends continuous
+  values at ~30 Hz, and holds each edited field until the device echoes it (or
+  400 ms) so stale echoes don't make values jump back. Fields being typed or
+  dragged are never overwritten.
+- Presets (7) store cameras, on-air, position, size, crop and a 192×108
+  thumbnail drawn by `PipPreview::paintProgram` from the camera pictures /
+  colours (not real video). Recall sends only what differs, on-air last.
+- Settings live in QSettings group `pip` (camera N name/color/picture path,
+  showNames, presetN/...); shared by the plugin and the harness.
+- Open question for the user: preset thumbnails from real ATEM video in OBS
+  instead of the camera pictures?
 
 ## Build requirements (Windows only)
 
@@ -298,20 +320,23 @@ command above as Administrator.
 1. `atem-cli` (USB) or `atem-cli --ip 192.168.10.240` — confirms the SDK
    connection, lists macros, inputs and the live PiP values.
 2. `atem-cli run N` / `atem-cli stop` — macro control without any UI.
-3. `atem-harness.exe` — both panels in a plain window, debuggable in VS.
-   Needs the Qt `bin` folder on PATH (or `windeployqt`).
+3. `atem-harness.exe` — both panels in a plain window, debuggable in VS,
+   with an "ATEM log" dock showing every SDK call. Same panel sources as the
+   plugin; only plugin-main.cpp is OBS-specific. Needs the Qt `bin` folder on
+   PATH (or `windeployqt`).
 4. The plugin in OBS — check the OBS log for `[ATEM]` lines.
 
 ## Current status
 
 - Macro panel reworked; plugin, harness and CLI build (2026-09-25)
-- PiP SDK layer (`atem-pip`) and panel skeleton build; layout pending review
-  of the HTML mockups
+- PiP panel implemented from `mockups/index.html` and builds (2026-09-26);
+  layout, preview drag/resize, number boxes and settings checked offscreen
 - NEVER yet run against a real ATEM or loaded in OBS (no record of a
   successful run; the April 2026 DLL was likely rejected by OBS 30.x — see
   version matching above)
 - NEXT STEPS: reinstall OBS 32.1.x, Qt (matching OBS), ATEM Software Control;
-  run `atem-cli` against the ATEM; verify PiP value ranges; choose a mockup
+  run `atem-cli` against the ATEM; verify PiP value ranges and the +Y
+  direction; try both panels in atem-harness, then in OBS
 
 ### SDK signature notes
 
