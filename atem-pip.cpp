@@ -239,24 +239,24 @@ bool AtemPip::setOnAir(bool onAir) {
 bool AtemPip::makeDVE() {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_key) return false;
-    BMDSwitcherKeyType type{};
-    if (SUCCEEDED(m_key->GetType(&type)) && type == bmdSwitcherKeyTypeDVE) return true;
-    if (SUCCEEDED(m_key->SetType(bmdSwitcherKeyTypeDVE))) {
-        if (m_logCalls) trace("[ATEM PiP] SetType(DVE)");
-        return true;
-    }
-    // Refused: free the DVE from the transition. The SDK refuses locally (no
-    // command is sent) until the switcher confirms the new style, so the
-    // caller retries.
+    // A DVE transition holds the one DVE: a DVE key keeps its type but can't
+    // fly, and SetType(DVE) is refused. Free it by switching the next
+    // transition to Mix; the SDK only sees the DVE free once the switcher
+    // confirms, so the caller retries.
     if (m_transition) {
         BMDSwitcherTransitionStyle current{}, next{};
         m_transition->GetTransitionStyle(&current);
         m_transition->GetNextTransitionStyle(&next);
-        if (current == bmdSwitcherTransitionStyleDVE || next == bmdSwitcherTransitionStyleDVE)
-            check(m_transition->SetNextTransitionStyle(bmdSwitcherTransitionStyleMix),
-                  "SetNextTransitionStyle(Mix) to free the DVE");
+        if (current == bmdSwitcherTransitionStyleDVE || next == bmdSwitcherTransitionStyleDVE) {
+            if (next == bmdSwitcherTransitionStyleDVE)
+                check(m_transition->SetNextTransitionStyle(bmdSwitcherTransitionStyleMix),
+                      "SetNextTransitionStyle(Mix) to free the DVE");
+            return false;
+        }
     }
-    return false;
+    BMDSwitcherKeyType type{};
+    if (SUCCEEDED(m_key->GetType(&type)) && type == bmdSwitcherKeyTypeDVE) return true;
+    return check(m_key->SetType(bmdSwitcherKeyTypeDVE), "SetType(DVE)");
 }
 
 bool AtemPip::setValue(AtemPipField field, double value) {

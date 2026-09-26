@@ -89,11 +89,11 @@ public:
     bool setProgramInput(BMDSwitcherInputId input);
     bool setPipInput(BMDSwitcherInputId input);
     bool setOnAir(bool onAir);
-    // Makes upstream key 1 a DVE key. The ATEM Mini has one DVE, shared with
-    // the DVE transition: if a DVE transition holds it, this switches the next
-    // transition to Mix and returns false — call again once the switcher has
-    // confirmed (the SDK refuses SetType(DVE) until its state shows the DVE
-    // free). Returns true once the key is a DVE key.
+    // Makes upstream key 1 a working DVE key. The ATEM Mini has one DVE,
+    // shared with the DVE transition: while a DVE transition holds it, even a
+    // DVE key can't move or resize. Then this switches the next transition to
+    // Mix and returns false — call again once the switcher has confirmed.
+    // Returns true once the key is a DVE key and the DVE is free.
     bool makeDVE();
     bool setValue(AtemPipField field, double value);
     bool setCropEnabled(bool enabled);

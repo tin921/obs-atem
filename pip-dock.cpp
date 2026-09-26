@@ -631,13 +631,21 @@ void AtemPipDock::render() {
         b->update();
     }
 
-    m_dveWarning->setVisible(m_viewLoaded && !m_view.isDVE);
-    // The button stays available even when canBeDVE is false: that is the
-    // case where a DVE transition holds the DVE, and makeDVE frees it.
-    m_dveWarningText->setText(m_view.dveUsedByTransition
-        ? "Upstream key 1 is not a DVE key: the DVE is in use by the DVE transition. "
-          "Setting the key to DVE switches the next transition to Mix."
-        : "Upstream key 1 is not a DVE key, so position and size have no effect.");
+    // The PiP needs a DVE key and the DVE itself, which a DVE transition can
+    // hold (then even a DVE key can't move). The button fixes either case.
+    bool dveHeld = m_view.dveUsedByTransition;
+    m_dveWarning->setVisible(m_viewLoaded && (!m_view.isDVE || dveHeld));
+    if (!m_view.isDVE && !dveHeld) {
+        m_dveWarningText->setText("Upstream key 1 is not a DVE key, so position and size have no effect.");
+        m_makeDveBtn->setText("Set key type to DVE");
+    } else if (!m_view.isDVE) {
+        m_dveWarningText->setText("Upstream key 1 is not a DVE key, and the DVE transition is using the DVE. "
+                                  "Setting the key to DVE switches the next transition to Mix.");
+        m_makeDveBtn->setText("Set key type to DVE");
+    } else {
+        m_dveWarningText->setText("The DVE transition is using the DVE, so position and size have no effect.");
+        m_makeDveBtn->setText("Switch next transition to Mix");
+    }
 
     m_fields[Field::SizeX]->setMaximum(m_view.canScaleUp ? kSizeScaleUpMax : kSize.max);
     for (auto& [f, box] : m_fields) {
