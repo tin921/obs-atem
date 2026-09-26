@@ -22,7 +22,8 @@
 #include "pip-dock.h"
 
 OBS_DECLARE_MODULE()
-OBS_MODULE_USE_DEFAULT_LOCALE("obs-atem", "en-US")
+// No locale files: the plugin is English only, so its text is in the code and
+// OBS has no data/locale/*.ini to look for.
 
 // Shared by both panels; lives until module unload.
 static AtemSession* session = nullptr;
@@ -33,12 +34,6 @@ const char* obs_module_name(void) {
 
 const char* obs_module_description(void) {
     return "Dockable panels to trigger Blackmagic ATEM macros and control picture-in-picture";
-}
-
-// Text from data/locale/<lang>.ini, or the fallback if the file is missing.
-static const char* text(const char* key, const char* fallback) {
-    const char* out = nullptr;
-    return obs_module_get_string(key, &out) ? out : fallback;
 }
 
 static void addDock(QMainWindow* mainWindow, const char* id, const char* title, QWidget* panel) {
@@ -86,8 +81,8 @@ bool obs_module_load(void) {
 
     session = new AtemSession();
 
-    addDock(mainWindow, "AtemMacroDock", text("ATEM.MacrosDock", "ATEM Macros"), new AtemMacroDock(session));
-    addDock(mainWindow, "AtemPipDock", text("ATEM.PipDock", "ATEM PiP"), new AtemPipDock(session));
+    addDock(mainWindow, "AtemMacroDock", "ATEM Macros", new AtemMacroDock(session));
+    addDock(mainWindow, "AtemPipDock", "ATEM PiP", new AtemPipDock(session));
 
     obs_frontend_add_event_callback(frontend_event_handler, nullptr);
 

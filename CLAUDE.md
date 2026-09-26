@@ -117,7 +117,6 @@ obs-atem/
 ├── harness/main.cpp            # atem-harness: both panels + "ATEM log" dock (SDK calls)
 ├── cli/main.cpp                # atem-cli: info | pip | run N | stop [--ip ADDR]
 ├── mockups/                    # index.html = PiP layout reference; drafts.html = earlier A/B/C
-├── data/locale/en-US.ini       # Plugin text (dock titles via obs_module_get_string)
 ├── scripts/gen-obs-libs.ps1    # Generates obs.lib / obs-frontend-api.lib into build\
 └── scripts/deploy.ps1          # Copies the plugin to %ProgramData%\obs-studio\plugins\obs-atem
 ```
@@ -293,10 +292,11 @@ cmake --build build --config Release
 powershell -ExecutionPolicy Bypass -File scripts\deploy.ps1
 ```
 
-Deploys to `C:\ProgramData\obs-studio\plugins\obs-atem\{bin\64bit,data}` — OBS
-28+ on Windows loads per-machine plugins from there (OBSBasic.cpp,
-GetProgramDataPath "obs-studio/plugins/%module%"). `data\locale\en-US.ini`
-must exist and be non-empty or OBS logs "Failed to load 'en-US' text".
+Deploys to `C:\ProgramData\obs-studio\plugins\obs-atem\bin\64bit\obs-atem.dll` —
+OBS 28+ on Windows loads per-machine plugins from there (OBSBasic.cpp,
+GetProgramDataPath "obs-studio/plugins/%module%"). The DLL is the whole
+plugin: there is no locale file (English only, text in the code, no
+OBS_MODULE_USE_DEFAULT_LOCALE), so OBS doesn't look for one.
 
 ## Runtime requirements (on the streaming PC)
 

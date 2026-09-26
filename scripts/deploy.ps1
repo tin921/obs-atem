@@ -2,7 +2,8 @@
 # plugins from, without needing Administrator:
 #
 #   %ProgramData%\obs-studio\plugins\obs-atem\bin\64bit\obs-atem.dll
-#   %ProgramData%\obs-studio\plugins\obs-atem\data\...   (locale files)
+#
+# The DLL is the whole plugin: no data files.
 #
 # Run from the repo root after building:
 #   powershell -ExecutionPolicy Bypass -File scripts\deploy.ps1
@@ -28,7 +29,8 @@ Copy-Item $dll "$target\bin\64bit\" -Force
 if (Test-Path "build\$Config\obs-atem.pdb") {
     Copy-Item "build\$Config\obs-atem.pdb" "$target\bin\64bit\" -Force
 }
-Copy-Item "data" $target -Recurse -Force
+# Earlier versions shipped data\locale\en-US.ini; no longer used.
+if (Test-Path "$target\data") { Remove-Item "$target\data" -Recurse -Force }
 
 # An older copy in Program Files would load too and clash (same dock ids).
 $legacy = "C:\Program Files\obs-studio\obs-plugins\64bit\obs-atem.dll"

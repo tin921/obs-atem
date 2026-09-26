@@ -147,12 +147,11 @@ if(OBS_INCLUDE_DIR AND OBS_FRONTEND_INCLUDE_DIR AND OBS_LIB AND OBS_FRONTEND_LIB
     )
 
     # Layout of an OBS plugin folder (for scripts\deploy.ps1 see README):
-    #   <prefix>/bin/64bit/obs-atem.dll, <prefix>/data/locale/*.ini
+    #   <prefix>/bin/64bit/obs-atem.dll  (no data files)
     install(TARGETS obs-atem
         LIBRARY DESTINATION "bin/64bit"
         RUNTIME DESTINATION "bin/64bit"
     )
-    install(DIRECTORY data/ DESTINATION "data")
 else()
     message(WARNING "OBS headers/import libraries not found: skipping the obs-atem plugin target. "
                     "Set OBS_DIR and generate obs.lib / obs-frontend-api.lib (see CLAUDE.md).")

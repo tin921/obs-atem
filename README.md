@@ -146,10 +146,9 @@ Administrator rights:
 
 ```text
 C:\ProgramData\obs-studio\plugins\obs-atem\bin\64bit\obs-atem.dll
-C:\ProgramData\obs-studio\plugins\obs-atem\data\locale\en-US.ini
 ```
 
-That is all OBS needs. Qt and the Visual C++ runtime come with OBS; the ATEM
+That one file is all OBS needs. Qt and the Visual C++ runtime come with OBS; the ATEM
 SDK comes with ATEM Software Control. (Copying `obs-atem.dll` into
 `C:\Program Files\obs-studio\obs-plugins\64bit\` as Administrator also works —
 use one location, not both.)
@@ -238,7 +237,6 @@ obs-atem/
 ├── harness/main.cpp        Standalone Qt host for the panels
 ├── cli/main.cpp            Command-line diagnostics
 ├── mockups/                PiP panel layout reference (index.html) and drafts
-├── data/locale/en-US.ini   Plugin text (dock titles)
 ├── scripts/gen-obs-libs.ps1  Generates OBS import libraries
 └── scripts/deploy.ps1      Installs the built plugin for OBS (no admin needed)
 ```
