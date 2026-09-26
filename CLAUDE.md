@@ -193,32 +193,37 @@ values).
 
 - OBS refuses to load a plugin built against a newer libobs than the running
   OBS (log: `Module '...' compiled with newer libobs X.Y`). The OBS source at
-  D:\cemc-sr\obs-studio is **32.1.0**. The previously installed OBS shipped
-  Qt 6.6.3 (OBS 30.x), so the April 2026 DLL was most likely rejected.
-  Install OBS 32.1.x, or check out the obs-studio tag matching the installed OBS.
+  D:\cemc-sr\obs-studio is **32.1.0**; the installed OBS is 32.2.2, which
+  loads it. The previously installed OBS shipped Qt 6.6.3 (OBS 30.x), so the
+  April 2026 DLL was most likely rejected.
 - Compile against the same Qt minor version that the installed OBS ships
   (check Qt6Core.dll in OBS's bin\64bit).
 
-### Machine state (2026-09-25)
+### Machine state (2026-09-26)
 
 The original setup was done under a Windows account `Admin` that no longer
 exists; the current account is `DELL`. Git reports "dubious ownership" on
 D:\cemc-sr\obs-studio for that reason (use `git -c safe.directory=* ...`).
 
 ```
-Present:
-  VS 2022 Build Tools: C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools
-                       (MSVC 14.44, bundled CMake + Ninja)
-  OBS source:          D:\cemc-sr\obs-studio (32.1.0; libobs\obsconfig.h is a hand-made stub)
-  ATEM SDK:            D:\cemc-sr\Blackmagic_ATEM_Switchers_SDK_10.2.1\Blackmagic ATEM Switchers SDK 10.2.1\Windows
-  ATEM headers:        ...\Windows\include\BMDSwitcherAPI.h
-  OBS import libs:     build\obs.lib, build\obs-frontend-api.lib (generated earlier)
-Missing (user is reinstalling):
-  OBS Studio            (C:\Program Files\obs-studio)
-  ATEM Software Control (C:\Program Files (x86)\Blackmagic Design\Blackmagic ATEM Switchers)
-  Qt 6 MSVC SDK         (was D:\ProgramFiles\Qt\6.11.0\msvc2022_64)
-  VS 2022 Community     (was D:\Program Filesx\Microsoft Visual Studio\2022\Community)
+VS 2022 Build Tools:   C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools
+                       (MSVC 14.44, bundled CMake + Ninja); VS Community not installed
+OBS Studio:            32.2.2 at C:\Program Files\obs-studio (ships Qt 6.11.1)
+OBS source (headers):  D:\cemc-sr\obs-studio (32.1.0 — older than 32.2.2, so OK;
+                       libobs\obsconfig.h is a hand-made stub)
+Qt SDK:                D:\ProgramFiles\Qt\6.11.1\msvc2022_64 (qtbase + qttools)
+                       Qt6_DIR = D:/ProgramFiles/Qt/6.11.1/msvc2022_64/lib/cmake/Qt6
+ATEM Software Control: 10.2.1 installed
+ATEM SDK:              D:\cemc-sr\Blackmagic_ATEM_Switchers_SDK_10.2.1\Blackmagic ATEM Switchers SDK 10.2.1\Windows
+ATEM 10.4.1 download:  in D:\cemc-sr, for a later upgrade (software + firmware + SDK together)
+OBS import libs:       build\obs.lib, build\obs-frontend-api.lib are from the OLD OBS —
+                       regenerate from 32.2.2 with scripts\gen-obs-libs.ps1
 ```
+
+Qt 6.11.1 install note: aqtinstall 3.3.0 cannot install Qt 6.10+ (Qt moved
+those to per-compiler folders on the server). It was fetched manually from
+https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6111/qt6_6111_msvc2022_64/qt.qt6.6111.win64_msvc2022_64/
+(qtbase and qttools .7z, SHA-1 checked) and extracted into the kit folder.
 
 ### VS Developer Tools
 
@@ -334,9 +339,11 @@ command above as Administrator.
 - NEVER yet run against a real ATEM or loaded in OBS (no record of a
   successful run; the April 2026 DLL was likely rejected by OBS 30.x — see
   version matching above)
-- NEXT STEPS: reinstall OBS 32.1.x, Qt (matching OBS), ATEM Software Control;
-  run `atem-cli` against the ATEM; verify PiP value ranges and the +Y
-  direction; try both panels in atem-harness, then in OBS
+- OBS 32.2.2, Qt 6.11.1 and ATEM Software Control 10.2.1 installed
+  (2026-09-26); plugin, harness and CLI build against Qt 6.11.1
+- NEXT STEPS: regenerate the OBS import libs from 32.2.2; run `atem-cli`
+  against the ATEM; verify PiP value ranges and the +Y direction; try both
+  panels in atem-harness, then in OBS
 
 ### SDK signature notes
 
