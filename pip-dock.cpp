@@ -152,6 +152,15 @@ AtemPipDock::AtemPipDock(AtemSession* session, QWidget* parent)
     m_flushTimer.setInterval(kFlushIntervalMs);
     connect(&m_flushTimer, &QTimer::timeout, this, &AtemPipDock::flushPending);
 
+    m_dveRetryTimer.setInterval(100);
+    connect(&m_dveRetryTimer, &QTimer::timeout, this, [this]() {
+        bool done = m_session->isConnected() && m_session->pip().makeDVE();
+        if (done || ++m_dveRetries >= 20) {
+            m_dveRetryTimer.stop();
+            m_makeDveBtn->setEnabled(true);
+        }
+    });
+
     // When a hold runs out without an echo, re-read the device.
     m_holdTimer.setSingleShot(true);
     connect(&m_holdTimer, &QTimer::timeout, this, &AtemPipDock::refreshFromDevice);
@@ -256,13 +265,19 @@ QWidget* AtemPipDock::buildControlsPage() {
     auto* warnLayout = new QVBoxLayout(m_dveWarning);
     warnLayout->setContentsMargins(6, 5, 6, 5);
     warnLayout->setSpacing(5);
-    auto* warnText = new QLabel("Upstream key 1 is not a DVE key, so position and size have no effect.",
-                                m_dveWarning);
-    warnText->setObjectName("warnText");
-    warnText->setWordWrap(true);
-    warnLayout->addWidget(warnText);
+    m_dveWarningText = new QLabel(m_dveWarning);
+    m_dveWarningText->setObjectName("warnText");
+    m_dveWarningText->setWordWrap(true);
+    warnLayout->addWidget(m_dveWarningText);
     m_makeDveBtn = new QPushButton("Set key type to DVE", m_dveWarning);
-    connect(m_makeDveBtn, &QPushButton::clicked, this, [this]() { m_session->pip().makeDVE(); });
+    connect(m_makeDveBtn, &QPushButton::clicked, this, [this]() {
+        if (m_session->pip().makeDVE()) return;
+        // The DVE was held by the transition and is being freed: retry until
+        // the switcher confirms (about two tenths of a second).
+        m_dveRetries = 0;
+        m_makeDveBtn->setEnabled(false);
+        m_dveRetryTimer.start();
+    });
     warnLayout->addWidget(m_makeDveBtn);
     m_dveWarning->setVisible(false);
     layout->addWidget(m_dveWarning);
@@ -593,6 +608,7 @@ void AtemPipDock::refreshFromDevice() {
         }
         m_view.available = s.available;
         m_view.canBeDVE = s.canBeDVE;
+        m_view.dveUsedByTransition = s.dveUsedByTransition;
         m_view.isDVE = s.isDVE;
         m_view.canScaleUp = s.canScaleUp;
         m_view.borderEnabled = s.borderEnabled;
@@ -616,7 +632,12 @@ void AtemPipDock::render() {
     }
 
     m_dveWarning->setVisible(m_viewLoaded && !m_view.isDVE);
-    m_makeDveBtn->setVisible(m_view.canBeDVE);
+    // The button stays available even when canBeDVE is false: that is the
+    // case where a DVE transition holds the DVE, and makeDVE frees it.
+    m_dveWarningText->setText(m_view.dveUsedByTransition
+        ? "Upstream key 1 is not a DVE key: the DVE is in use by the DVE transition. "
+          "Setting the key to DVE switches the next transition to Mix."
+        : "Upstream key 1 is not a DVE key, so position and size have no effect.");
 
     m_fields[Field::SizeX]->setMaximum(m_view.canScaleUp ? kSizeScaleUpMax : kSize.max);
     for (auto& [f, box] : m_fields) {

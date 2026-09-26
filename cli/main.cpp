@@ -1,10 +1,11 @@
 /*
  * atem-cli — diagnostics for the ATEM SDK layer without OBS or Qt.
  *
- *   atem-cli [--ip ADDRESS] [info | pip | run N | stop]
+ *   atem-cli [--ip ADDRESS] [info | pip | dve | run N | stop]
  *
  *   info   (default) model, macros, inputs and PiP state
  *   pip    inputs and PiP state only
+ *   dve    make upstream key 1 a DVE key, as the panel's button does
  *   run N  run macro N (1-based, as numbered in the panel)
  *   stop   stop the running macro
  *
@@ -19,6 +20,7 @@
 #include <ctime>
 #include <iomanip>
 #include <string>
+#include <thread>
 
 static std::ofstream g_log;
 
@@ -51,7 +53,7 @@ static void writeLog(const char* level, const std::string& msg)
 
 static void usage()
 {
-    std::cout << "usage: atem-cli [--ip ADDRESS] [info | pip | run N | stop]\n";
+    std::cout << "usage: atem-cli [--ip ADDRESS] [info | pip | dve | run N | stop]\n";
 }
 
 static void printMacros(AtemController& atem)
@@ -93,7 +95,8 @@ static void printPip(AtemController& atem)
     ss << "PiP state:\n"
        << "  main input   " << inputName(inputs, s.programInput) << '\n'
        << "  pip input    " << inputName(inputs, s.pipInput) << '\n'
-       << "  key type DVE " << (s.isDVE ? "yes" : "no") << " (can be DVE: " << (s.canBeDVE ? "yes" : "no") << ")\n"
+       << "  key type DVE " << (s.isDVE ? "yes" : "no") << " (can be DVE: " << (s.canBeDVE ? "yes" : "no")
+       << (s.dveUsedByTransition ? ", DVE used by the transition" : "") << ")\n"
        << "  on air       " << (s.onAir ? "yes" : "no") << '\n'
        << "  position     x=" << s.positionX << " y=" << s.positionY << '\n'
        << "  size         x=" << s.sizeX << " y=" << s.sizeY << " (can scale up: " << (s.canScaleUp ? "yes" : "no") << ")\n"
@@ -113,7 +116,7 @@ int main(int argc, char** argv)
         std::string arg = argv[i];
         if (arg == "--ip" && i + 1 < argc) {
             ip = argv[++i];
-        } else if (arg == "info" || arg == "pip" || arg == "stop") {
+        } else if (arg == "info" || arg == "pip" || arg == "dve" || arg == "stop") {
             command = arg;
         } else if (arg == "run" && i + 1 < argc) {
             command = arg;
@@ -150,6 +153,18 @@ int main(int argc, char** argv)
         printMacros(atem);
         printPip(atem);
     } else if (command == "pip") {
+        printPip(atem);
+    } else if (command == "dve") {
+        // Same as the panel: retry while a DVE transition releases the DVE.
+        bool done = false;
+        for (int attempt = 0; attempt < 20 && !done; ++attempt) {
+            done = atem.pip().makeDVE();
+            if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        if (!done) {
+            LOG_ERR("Could not make upstream key 1 a DVE key");
+            return 1;
+        }
         printPip(atem);
     } else if (command == "run") {
         if (!atem.runMacro(static_cast<uint32_t>(macroNumber - 1))) {

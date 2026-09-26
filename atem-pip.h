@@ -33,7 +33,8 @@ struct AtemInputInfo {
 
 struct AtemPipState {
     bool available = false;      // M/E 1 and upstream key 1 were found
-    bool canBeDVE = false;
+    bool canBeDVE = false;       // false while the one DVE is held elsewhere
+    bool dveUsedByTransition = false;  // current or next transition style is DVE
     bool isDVE = false;
     bool onAir = false;
 
@@ -88,6 +89,11 @@ public:
     bool setProgramInput(BMDSwitcherInputId input);
     bool setPipInput(BMDSwitcherInputId input);
     bool setOnAir(bool onAir);
+    // Makes upstream key 1 a DVE key. The ATEM Mini has one DVE, shared with
+    // the DVE transition: if a DVE transition holds it, this switches the next
+    // transition to Mix and returns false — call again once the switcher has
+    // confirmed (the SDK refuses SetType(DVE) until its state shows the DVE
+    // free). Returns true once the key is a DVE key.
     bool makeDVE();
     bool setValue(AtemPipField field, double value);
     bool setCropEnabled(bool enabled);
@@ -108,12 +114,14 @@ private:
     void detachLocked();
 
     IBMDSwitcherMixEffectBlock*    m_mixEffect = nullptr;
+    IBMDSwitcherTransitionParameters* m_transition = nullptr;
     IBMDSwitcherKey*               m_key = nullptr;
     IBMDSwitcherKeyFlyParameters*  m_fly = nullptr;
     IBMDSwitcherKeyDVEParameters*  m_dve = nullptr;
     std::vector<IBMDSwitcherInput*> m_inputs;
 
     IBMDSwitcherMixEffectBlockCallback*    m_mixEffectCallback = nullptr;
+    IBMDSwitcherTransitionParametersCallback* m_transitionCallback = nullptr;
     IBMDSwitcherKeyCallback*               m_keyCallback = nullptr;
     IBMDSwitcherKeyFlyParametersCallback*  m_flyCallback = nullptr;
     IBMDSwitcherKeyDVEParametersCallback*  m_dveCallback = nullptr;

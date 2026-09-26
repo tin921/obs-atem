@@ -9,6 +9,7 @@ using FlyCallback       = BmdCallback<IBMDSwitcherKeyFlyParametersCallback,
                                       BMDSwitcherKeyFlyParametersEventType, BMDSwitcherFlyKeyFrame>;
 using DveCallback       = BmdCallback<IBMDSwitcherKeyDVEParametersCallback, BMDSwitcherKeyDVEParametersEventType>;
 using InputCallback     = BmdCallback<IBMDSwitcherInputCallback, BMDSwitcherInputEventType>;
+using TransitionCallback = BmdCallback<IBMDSwitcherTransitionParametersCallback, BMDSwitcherTransitionParametersEventType>;
 
 std::string callText(const char* name, double value) {
     char buf[96];
@@ -47,6 +48,9 @@ bool AtemPip::attach(IBMDSwitcher* switcher) {
         return false;
     }
 
+    // The transition shares the ATEM Mini's one DVE with the key.
+    m_mixEffect->QueryInterface(__uuidof(IBMDSwitcherTransitionParameters), reinterpret_cast<void**>(&m_transition));
+
     // Upstream key 1 — the only keyer on the ATEM Mini, and the one with DVE.
     IBMDSwitcherKeyIterator* keyIt = nullptr;
     if (SUCCEEDED(m_mixEffect->CreateIterator(__uuidof(IBMDSwitcherKeyIterator),
@@ -80,6 +84,11 @@ bool AtemPip::attach(IBMDSwitcher* switcher) {
             notifyChanged();
     });
     m_mixEffect->AddCallback(m_mixEffectCallback);
+
+    if (m_transition) {
+        m_transitionCallback = new TransitionCallback([this](BMDSwitcherTransitionParametersEventType) { notifyChanged(); });
+        m_transition->AddCallback(m_transitionCallback);
+    }
 
     if (m_key) {
         m_keyCallback = new KeyCallback([this](BMDSwitcherKeyEventType) { notifyChanged(); });
@@ -122,12 +131,15 @@ void AtemPip::detachLocked() {
     if (m_fly && m_flyCallback) m_fly->RemoveCallback(m_flyCallback);
     if (m_key && m_keyCallback) m_key->RemoveCallback(m_keyCallback);
     if (m_mixEffect && m_mixEffectCallback) m_mixEffect->RemoveCallback(m_mixEffectCallback);
+    if (m_transition && m_transitionCallback) m_transition->RemoveCallback(m_transitionCallback);
 
     bmdRelease(m_inputCallback);
     bmdRelease(m_dveCallback);
     bmdRelease(m_flyCallback);
     bmdRelease(m_keyCallback);
     bmdRelease(m_mixEffectCallback);
+    bmdRelease(m_transitionCallback);
+    bmdRelease(m_transition);
 
     for (auto*& input : m_inputs) bmdRelease(input);
     m_inputs.clear();
@@ -179,6 +191,13 @@ AtemPipState AtemPip::state() const {
 
     BOOL b = FALSE;
     if (SUCCEEDED(m_key->CanBeDVEKey(&b))) s.canBeDVE = b != FALSE;
+    if (m_transition) {
+        BMDSwitcherTransitionStyle style{};
+        if (SUCCEEDED(m_transition->GetTransitionStyle(&style)) && style == bmdSwitcherTransitionStyleDVE)
+            s.dveUsedByTransition = true;
+        if (SUCCEEDED(m_transition->GetNextTransitionStyle(&style)) && style == bmdSwitcherTransitionStyleDVE)
+            s.dveUsedByTransition = true;
+    }
     BMDSwitcherKeyType type{};
     if (SUCCEEDED(m_key->GetType(&type))) s.isDVE = type == bmdSwitcherKeyTypeDVE;
     if (SUCCEEDED(m_key->GetOnAir(&b))) s.onAir = b != FALSE;
@@ -219,7 +238,25 @@ bool AtemPip::setOnAir(bool onAir) {
 
 bool AtemPip::makeDVE() {
     std::lock_guard<std::mutex> lock(m_mutex);
-    return m_key && check(m_key->SetType(bmdSwitcherKeyTypeDVE), "SetType(DVE)");
+    if (!m_key) return false;
+    BMDSwitcherKeyType type{};
+    if (SUCCEEDED(m_key->GetType(&type)) && type == bmdSwitcherKeyTypeDVE) return true;
+    if (SUCCEEDED(m_key->SetType(bmdSwitcherKeyTypeDVE))) {
+        if (m_logCalls) trace("[ATEM PiP] SetType(DVE)");
+        return true;
+    }
+    // Refused: free the DVE from the transition. The SDK refuses locally (no
+    // command is sent) until the switcher confirms the new style, so the
+    // caller retries.
+    if (m_transition) {
+        BMDSwitcherTransitionStyle current{}, next{};
+        m_transition->GetTransitionStyle(&current);
+        m_transition->GetNextTransitionStyle(&next);
+        if (current == bmdSwitcherTransitionStyleDVE || next == bmdSwitcherTransitionStyleDVE)
+            check(m_transition->SetNextTransitionStyle(bmdSwitcherTransitionStyleMix),
+                  "SetNextTransitionStyle(Mix) to free the DVE");
+    }
+    return false;
 }
 
 bool AtemPip::setValue(AtemPipField field, double value) {

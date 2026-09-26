@@ -125,5 +125,8 @@ private:
     std::map<AtemPipField, double> m_pending;   // continuous edits not yet sent
     std::map<Field, Hold> m_holds;              // sent edits awaiting the echo
     QTimer m_flushTimer;
+    QTimer m_dveRetryTimer;     // retries makeDVE while the DVE is being freed
+    int m_dveRetries = 0;
+    QLabel* m_dveWarningText = nullptr;
     QTimer m_holdTimer;
 };
