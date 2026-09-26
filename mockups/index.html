@@ -74,16 +74,18 @@
   }
   .preview:focus-visible { box-shadow: 0 0 0 1px var(--red); outline: none; }
 
-  .caption { font-size: 10px; color: var(--muted); margin: 4px 0 1px; }
-  .nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px 5px; }
-  .nums.crop { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  /* Field labels sit right-aligned over their boxes; the group name
+     ("Position", "Crop") takes the free left end of the same line. */
+  .nums { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px 5px; margin-top: 3px; }
+  .nums.crop { grid-template-columns: minmax(46px, 1.2fr) repeat(3, minmax(0, 1fr)); margin-top: 6px; }
+  .nums .group-label { position: absolute; left: 0; top: 0; font-size: 10px; line-height: 14px; color: var(--text); font-weight: 600; }
   .num { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-  .num label { font-size: 10px; color: var(--muted); }
-  .num input { width: 100%; }
+  .num label { font-size: 10px; line-height: 14px; color: var(--muted); text-align: right; }
+  .num input { width: 100%; padding: 3px 4px; }
 
-  .save-row { display: flex; gap: 5px; align-items: center; margin-top: 8px; }
+  .save-row { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 8px; }
   .save-row label { font-size: 11px; white-space: nowrap; }
-  .save-row select { flex: 1; min-width: 0; }
+  .save-row select { flex: 1 1 70px; min-width: 0; }
 
   /* Settings overlay (the ⚙ page) */
   .settings {
@@ -197,9 +199,8 @@
           <div class="presets" id="presets" role="group" aria-label="Saved presets"></div>
           <div>
             <div id="preview" tabindex="0" aria-label="PiP position. Drag to move, drag the corner to resize, arrow keys nudge."></div>
-            <div class="nums" id="numsDve"></div>
-            <div class="caption">Crop</div>
-            <div class="nums crop" id="numsCrop"></div>
+            <div class="nums" id="numsDve"><span class="group-label">Position</span></div>
+            <div class="nums crop" id="numsCrop"><span class="group-label">Crop</span></div>
             <div class="save-row">
               <label for="slot">Save current to</label>
               <select id="slot"></select>
