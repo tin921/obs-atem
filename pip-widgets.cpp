@@ -103,6 +103,7 @@ void PresetButton::setPreset(const PipPreset& preset) {
 void PresetButton::paintContent(QPainter& p, const QRectF& r) {
     if (m_valid && !m_thumbnail.isNull()) drawCover(p, r, m_thumbnail);
     else p.fillRect(r, QColor("#181818"));
+    if (!m_showNumber) return;
 
     QFont font = p.font();
     font.setBold(true);

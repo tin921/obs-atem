@@ -50,6 +50,8 @@ class PresetButton : public PictureButton {
 public:
     PresetButton(int number, QWidget* parent = nullptr);
     void setPreset(const PipPreset& preset);
+    // The button number in the top-left corner (the Views panel hides it).
+    void setShowNumber(bool show) { m_showNumber = show; update(); }
 
 protected:
     void paintContent(QPainter& p, const QRectF& r) override;
@@ -57,6 +59,7 @@ protected:
 
 private:
     int m_number;
+    bool m_showNumber = true;
     bool m_valid = false;
     QPixmap m_thumbnail;
 };

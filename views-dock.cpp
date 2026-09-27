@@ -222,6 +222,7 @@ void AtemViewsDock::rebuildGrid() {
     for (int i = 0; i < order.size(); ++i) {
         int index = order[i];
         auto* btn = new PresetButton(index + 1, m_gridBody);
+        btn->setShowNumber(false);
         btn->setPreset(m_settings->preset(index));
         btn->setToolTip(describe(index));
         btn->setAccessibleName(QString("View %1").arg(index + 1));
