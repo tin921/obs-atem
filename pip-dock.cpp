@@ -9,6 +9,8 @@
 #include <QColorDialog>
 #include <QComboBox>
 #include <QDateTime>
+#include <QDir>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QGridLayout>
@@ -19,8 +21,10 @@
 #include <QPainter>
 #include <QPushButton>
 #include <QResizeEvent>
+#include <QSaveFile>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QStandardPaths>
 #include <QStackedWidget>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -463,6 +467,7 @@ QWidget* AtemPipDock::buildSettingsPage() {
         connect(row.name, &QLineEdit::textEdited, this, [this, cam](const QString& text) {
             m_settings->setCustomName(cam, text);
         });
+        connect(row.name, &QLineEdit::editingFinished, this, &AtemPipDock::redrawThumbnails);
         fields->addWidget(row.name);
 
         auto* actions = new QHBoxLayout();
@@ -477,7 +482,10 @@ QWidget* AtemPipDock::buildSettingsPage() {
         connect(chooseBtn, &QPushButton::clicked, this, [this, cam]() { choosePicture(cam); });
         actions->addWidget(chooseBtn);
         auto* clearBtn = new QPushButton("Clear picture", body);
-        connect(clearBtn, &QPushButton::clicked, this, [this, cam]() { m_settings->setPicturePath(cam, QString()); });
+        connect(clearBtn, &QPushButton::clicked, this, [this, cam]() {
+            m_settings->setPicturePath(cam, QString());
+            redrawThumbnails();
+        });
         actions->addWidget(clearBtn);
         actions->addStretch(1);
         fields->addLayout(actions);
@@ -489,6 +497,33 @@ QWidget* AtemPipDock::buildSettingsPage() {
     m_showNames = new QCheckBox("Show names on camera buttons", body);
     connect(m_showNames, &QCheckBox::toggled, m_settings, &PipSettings::setShowNames);
     layout->addWidget(m_showNames);
+
+    // ── Export / import ──
+    auto* backupTitle = new QLabel("Export / import", body);
+    backupTitle->setObjectName("settingsTitle");
+    layout->addSpacing(6);
+    layout->addWidget(backupTitle);
+    auto* backupHint = new QLabel("Saves the camera names, colours, picture file paths (not the pictures "
+                                  "themselves), the saved buttons and the Views choice to a file. Import "
+                                  "replaces them; choose any picture that isn't found again.", body);
+    backupHint->setObjectName("hintText");
+    backupHint->setWordWrap(true);
+    layout->addWidget(backupHint);
+    auto* backupRow = new QHBoxLayout();
+    backupRow->setSpacing(4);
+    auto* exportBtn = new QPushButton("Export…", body);
+    connect(exportBtn, &QPushButton::clicked, this, &AtemPipDock::exportSettings);
+    backupRow->addWidget(exportBtn);
+    auto* importBtn = new QPushButton("Import…", body);
+    connect(importBtn, &QPushButton::clicked, this, &AtemPipDock::importSettings);
+    backupRow->addWidget(importBtn);
+    backupRow->addStretch(1);
+    layout->addLayout(backupRow);
+    m_backupStatus = new QLabel(body);
+    m_backupStatus->setObjectName("hintText");
+    m_backupStatus->setWordWrap(true);
+    m_backupStatus->hide();
+    layout->addWidget(m_backupStatus);
     layout->addStretch(1);
 
     page->setWidget(body);
@@ -515,7 +550,9 @@ void AtemPipDock::chooseColor(int camera) {
     BMDSwitcherInputId input = PipSettings::cameraInput(camera);
     QColor color = QColorDialog::getColor(m_settings->color(input), this,
                                           QString("Colour for %1").arg(m_settings->name(input)));
-    if (color.isValid()) m_settings->setColor(camera, color);
+    if (!color.isValid()) return;
+    m_settings->setColor(camera, color);
+    redrawThumbnails();
 }
 
 void AtemPipDock::choosePicture(int camera) {
@@ -525,8 +562,70 @@ void AtemPipDock::choosePicture(int camera) {
                                                 start.isEmpty() ? QString() : QFileInfo(start).absolutePath(),
                                                 "PNG images (*.png)");
     if (path.isEmpty()) return;
-    if (!m_settings->setPicturePath(camera, path))
+    if (!m_settings->setPicturePath(camera, path)) {
         QMessageBox::warning(this, "ATEM PiP", QString("Could not read %1 as an image.").arg(path));
+        return;
+    }
+    redrawThumbnails();
+}
+
+void AtemPipDock::exportSettings() {
+    QString start = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) +
+                    "/ATEM PiP settings.json";
+    QString path = QFileDialog::getSaveFileName(this, "Export PiP settings", start,
+                                                "PiP settings (*.json)");
+    if (path.isEmpty()) return;
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly) || file.write(m_settings->exportJson()) < 0 || !file.commit()) {
+        QMessageBox::warning(this, "ATEM PiP", QString("Could not write %1:\n%2").arg(path, file.errorString()));
+        return;
+    }
+    // Only the file name: a long path can't wrap and would widen the dock.
+    m_backupStatus->setText(QString("Exported to %1.").arg(QFileInfo(path).fileName()));
+    m_backupStatus->setToolTip(QDir::toNativeSeparators(path));
+    m_backupStatus->show();
+}
+
+void AtemPipDock::importSettings() {
+    QString path = QFileDialog::getOpenFileName(
+        this, "Import PiP settings", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
+        "PiP settings (*.json)");
+    if (path.isEmpty()) return;
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this, "ATEM PiP", QString("Could not read %1:\n%2").arg(path, file.errorString()));
+        return;
+    }
+    QByteArray json = file.readAll();
+    auto answer = QMessageBox::question(
+        this, "Import PiP settings",
+        QString("Replace the camera names, colours and pictures, all %1 saved buttons and the "
+                "Views choice with the ones in %2?")
+            .arg(PipSettings::kPresetCount).arg(QFileInfo(path).fileName()));
+    if (answer != QMessageBox::Yes) return;
+
+    PipSettings::ImportResult result = m_settings->importJson(json);
+    if (!result.ok) {
+        QMessageBox::warning(this, "ATEM PiP", QString("Nothing was imported.\n\n%1").arg(result.error));
+        return;
+    }
+    redrawThumbnails();
+    QString status = QString("Imported %1 saved button%2 from %3.")
+                         .arg(result.presets).arg(result.presets == 1 ? "" : "s")
+                         .arg(QFileInfo(path).fileName());
+    if (!result.missingPictures.isEmpty()) {
+        // The paths only in the message box: they can't wrap in the dock.
+        QStringList cameras;
+        for (const QString& missing : result.missingPictures) cameras << missing.section(':', 0, 0);
+        status += QString(" Pictures not found for %1: choose them again.").arg(cameras.join(", "));
+        QMessageBox::information(this, "ATEM PiP",
+                                 "These pictures were not found on this computer. The cameras use "
+                                 "their colours until you choose the pictures again:\n\n" +
+                                     result.missingPictures.join("\n"));
+    }
+    m_backupStatus->setText(status);
+    m_backupStatus->setToolTip(QDir::toNativeSeparators(path));
+    m_backupStatus->show();
 }
 
 void AtemPipDock::showMainPage() {
@@ -777,12 +876,35 @@ void AtemPipDock::flushPending() {
 
 // ── Presets ──────────────────────────────────────────────────
 
-QImage AtemPipDock::snapshotProgram() const {
+QImage AtemPipDock::drawThumbnail(const AtemPipState& state) const {
     QImage img(kPresetThumbWidth, kPresetThumbHeight, QImage::Format_ARGB32_Premultiplied);
     img.fill(Qt::black);
     QPainter p(&img);
-    PipPreview::paintProgram(p, QRectF(img.rect()), m_view, *m_settings, PipPreview::Style::Thumbnail);
+    PipPreview::paintProgram(p, QRectF(img.rect()), state, *m_settings, PipPreview::Style::Thumbnail);
     return img;
+}
+
+void AtemPipDock::redrawThumbnails() {
+    // Thumbnails are drawn from the camera pictures/colours, not real video,
+    // so they can be drawn again from a preset's values at any time.
+    m_settings->redrawThumbnails([this](const PipPreset& p) {
+        AtemPipState s;
+        s.available = true;
+        s.isDVE = true;
+        s.onAir = p.onAir;
+        s.programInput = p.programInput;
+        s.pipInput = p.pipInput;
+        s.positionX = p.positionX;
+        s.positionY = p.positionY;
+        s.sizeX = p.sizeX;
+        s.sizeY = p.sizeY;
+        s.cropEnabled = p.cropEnabled;
+        s.cropTop = p.cropTop;
+        s.cropBottom = p.cropBottom;
+        s.cropLeft = p.cropLeft;
+        s.cropRight = p.cropRight;
+        return drawThumbnail(s);
+    });
 }
 
 void AtemPipDock::savePreset(int index) {
@@ -801,7 +923,7 @@ void AtemPipDock::savePreset(int index) {
     p.cropLeft = m_view.cropLeft;
     p.cropRight = m_view.cropRight;
     p.cropEnabled = m_view.cropEnabled;
-    p.thumbnail = snapshotProgram();
+    p.thumbnail = drawThumbnail(m_view);
     m_settings->setPreset(index, p);
 }
 

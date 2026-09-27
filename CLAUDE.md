@@ -198,8 +198,19 @@ values).
   need the PiP panel. Its choice is QSettings `views/slots` ("1,10,20").
 - Settings live in QSettings group `pip` (camera N name/color/picture path,
   showNames, presetN/...); shared by the plugin and the harness.
-- Open question for the user: preset thumbnails from real ATEM video in OBS
-  instead of the camera pictures?
+- Thumbnails stay drawn from camera pictures, not real video (user decision
+  2026-09-27): OBS only receives the ATEM program output (PiP already
+  composited), the control SDK carries no video, and a remembered still of
+  the stage/slides would not match what is live and confuse the operator.
+  Because thumbnails are drawn, not captured, `AtemPipDock::redrawThumbnails`
+  redraws every saved button's thumbnail from its values when a camera's
+  picture, colour or name changes, and after an import.
+- ⚙ Export / Import (`PipSettings::exportJson` / `importJson`): JSON with
+  `"format": "obs-atem-pip", "version": 1`, cameras (name, colour, picture
+  *path*), showNames, the valid presets' values (no thumbnails) and `views`.
+  Import validates the whole file first and changes nothing on any error;
+  pictures that don't load are cleared and reported (the camera uses its
+  colour until the user chooses the picture again).
 
 ## Build requirements (Windows only)
 

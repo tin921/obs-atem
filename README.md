@@ -36,7 +36,12 @@ BMDSwitcherAPI COM SDK — no middleware server, no external process.
   size and crop on one of 20 buttons, with a thumbnail of the program. The
   column shows seven and scrolls for the rest
 - **Settings (⚙)** — a name, colour and PNG picture per camera, used on the
-  buttons, in the preview and in the preset thumbnails
+  buttons, in the preview and in the preset thumbnails (changing a picture or
+  colour redraws the thumbnails). **Export… / Import…** save and load all of
+  it as a `.json` file: names, colours, picture file *paths* (not the
+  pictures), "show names", the 20 buttons' values and the Views choice. Import
+  asks first, checks the whole file before changing anything, and lists any
+  picture it can't find on this PC so you can choose it again
 - Loads the current values from the ATEM on connect and follows changes made
   elsewhere (ATEM Software Control, hardware buttons, macros)
 

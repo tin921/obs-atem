@@ -6,7 +6,9 @@
 #include <QObject>
 #include <QPixmap>
 #include <QString>
+#include <QStringList>
 #include <array>
+#include <functional>
 #include <map>
 #include <vector>
 
@@ -70,11 +72,28 @@ public:
 
     const PipPreset& preset(int index) const { return m_presets[index]; }
     void setPreset(int index, const PipPreset& preset);
+    // Draws every saved button's thumbnail again (one changed() at the end):
+    // after an import, or when a camera's picture or colour changes.
+    void redrawThumbnails(const std::function<QImage(const PipPreset&)>& draw);
 
     // The Views panel: which presets it shows, in grid order (0-based
     // preset indices; default 0–6).
     const QList<int>& viewSlots() const { return m_viewSlots; }
     void setViewSlots(const QList<int>& order);
+
+    // Export / import of everything above as JSON: camera names, colours
+    // and picture file paths (not the pictures), "show names", the preset
+    // buttons' values and the Views choice. Preset thumbnails are not
+    // included: imported presets have none until they are drawn again.
+    QByteArray exportJson() const;
+    struct ImportResult {
+        bool ok = false;
+        QString error;                 // why nothing was imported
+        int presets = 0;               // buttons with a saved setup
+        QStringList missingPictures;   // "Camera N: path" that couldn't be loaded
+    };
+    // Checks the whole file first; imports nothing if any of it is invalid.
+    ImportResult importJson(const QByteArray& json);
 
 signals:
     void changed();

@@ -88,10 +88,13 @@ private:
 
     void savePreset(int index);
     void recallPreset(int index);
-    QImage snapshotProgram() const;
+    QImage drawThumbnail(const AtemPipState& state) const;
+    void redrawThumbnails();
 
     void chooseColor(int camera);
     void choosePicture(int camera);
+    void exportSettings();
+    void importSettings();
 
     AtemSession* m_session;
     PipSettings* m_settings;
@@ -123,6 +126,7 @@ private:
     };
     std::array<CameraRow, 4> m_cameraRows;
     QCheckBox* m_showNames = nullptr;
+    QLabel* m_backupStatus = nullptr;
 
     AtemPipState m_view;           // what the panel shows
     bool m_viewLoaded = false;     // m_view has been filled from the device
