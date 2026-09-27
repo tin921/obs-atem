@@ -561,7 +561,10 @@ void AtemPipDock::layoutStage() {
     int buttonWidth = presetWidth - kPresetScrollbarWidth - 2;
     int presetHeight = static_cast<int>(std::lround(buttonWidth * 9.0 / 16));
     for (auto* b : m_presetButtons) b->setFixedHeight(presetHeight);
-    m_presetColumn->setFixedWidth(buttonWidth);
+    // The scroll area doesn't resize its widget when the contents grow, so
+    // size the column to its buttons; otherwise taller buttons overlap.
+    m_presetColumn->setFixedSize(buttonWidth, PipSettings::kPresetCount * presetHeight +
+                                                  (PipSettings::kPresetCount - 1) * 3);
     m_presetScroll->setFixedSize(presetWidth, boxHeight);
     m_presetScroll->verticalScrollBar()->setSingleStep(presetHeight + 3);
 
