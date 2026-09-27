@@ -45,8 +45,9 @@ The layout reference is `mockups/index.html` (open it in a browser).
 **ATEM Views**
 
 - **View grid** — the chosen PiP buttons as pictures, two per row; click one to
-  recall it (only what differs is sent, the PiP goes on/off air last). The one
-  on air is lit. Works without the PiP panel open
+  recall it (only what differs is sent, the PiP goes on/off air last; a PiP
+  already on air that changes camera, place, size or crop goes off air first,
+  so it never shows half-changed). The one on air is lit. Works without the PiP panel open
 - **Settings (⚙)** — tick which of the 20 buttons appear and drag them (or
   ▲ ▼) into order: left to right, top to bottom
 - Saving a button in the PiP panel updates its picture here at once

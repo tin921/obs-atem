@@ -807,7 +807,9 @@ void AtemPipDock::recallPreset(int index) {
     if (!p.valid || !m_viewLoaded || !m_session->isConnected()) return;
 
     // Send only what differs. Sources and geometry first, the on-air change
-    // last, so the PiP appears already in its new place.
+    // last, so the PiP appears already in its new place. A PiP on air that
+    // changes box goes off air first (see recallPipPreset).
+    if (m_view.onAir && pipPresetChangesBox(p, m_view)) edit(Field::OnAir, 0.0);
     if (m_view.pipInput != p.pipInput) edit(Field::Pip, static_cast<double>(p.pipInput));
     if (m_view.programInput != p.programInput) edit(Field::Program, static_cast<double>(p.programInput));
     const std::pair<Field, double> values[] = {

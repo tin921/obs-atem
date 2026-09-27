@@ -187,7 +187,10 @@ values).
 - Presets (20; the column is the size of 7 and scrolls) store cameras,
   on-air, position, size, crop, crop on/off and a 192×108
   thumbnail drawn by `PipPreview::paintProgram` from the camera pictures /
-  colours (not real video). Recall sends only what differs, on-air last.
+  colours (not real video). Recall sends only what differs, on-air last. A PiP
+  already on air whose box (camera, place, size, crop) changes is taken off
+  air first — the switcher applies each command as it arrives, so otherwise
+  the new camera flashed in the old box and jumped (seen on the church PC).
 - One PipSettings object is shared by the PiP and Views panels (created in
   obs_module_load / the harness), so saving a preset updates Views at once.
   Views recalls through `recallPipPreset()` (pip-presets.cpp) straight to the
