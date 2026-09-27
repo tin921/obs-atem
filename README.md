@@ -17,6 +17,7 @@ BMDSwitcherAPI COM SDK — no middleware server, no external process.
 - **Auto-connect** — reconnects on startup the way you last connected (USB or IP)
 - **Macro grid** — 2-column grid showing all macros by name, one click to run
 - **Running indicator** — green highlight + bottom bar shows the active macro, with STOP
+  (and RESUME while the macro waits for the user)
 - **Connection-loss detection** — shows the error and a reconnect button if the ATEM goes away
 - **Settings (⚙)** — connection status, manual IP connect, troubleshooting info
 
@@ -161,7 +162,8 @@ use one location, not both.)
 2. Open **Docks → ATEM Macros** and **Docks → ATEM PiP**
 3. After OBS finishes loading, the plugin connects to the ATEM (USB the first
    time, then however you last connected)
-4. Click a macro to run it; click **STOP** in the bottom bar to stop it
+4. Click a macro to run it; click **STOP** in the bottom bar to stop it, or
+   **RESUME** to continue one that is waiting for the user
 5. Click **⚙** in the macro panel for connection settings and troubleshooting
 
 ---

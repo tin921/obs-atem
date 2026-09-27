@@ -34,10 +34,14 @@ AtemSession::AtemSession(QObject* parent)
     m_atem.setMacroUpdateCallback([this]() {
         QMetaObject::invokeMethod(this, [this]() { emit macrosChanged(); }, Qt::QueuedConnection);
     });
-    m_atem.setConnectionLostCallback([this]() {
-        QMetaObject::invokeMethod(this, [this]() {
-            m_atem.handleConnectionLost();
-            emit connectionChanged(m_atem.state());
+    m_atem.setConnectionLostCallback([this](uint64_t generation) {
+        QMetaObject::invokeMethod(this, [this, generation]() {
+            // During a ConnectTo (busy) the old connection is already torn
+            // down and the controller mutex is held on this very thread (the
+            // SDK pumps messages), so the report is stale and must not lock.
+            if (m_busy) return;
+            if (m_atem.handleConnectionLost(generation))
+                emit connectionChanged(m_atem.state());
         }, Qt::QueuedConnection);
     });
     m_atem.pip().setChangeCallback([this]() { queuePipChanged(); });

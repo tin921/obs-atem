@@ -758,6 +758,7 @@ void AtemPipDock::savePreset(int index) {
     p.cropBottom = m_view.cropBottom;
     p.cropLeft = m_view.cropLeft;
     p.cropRight = m_view.cropRight;
+    p.cropEnabled = m_view.cropEnabled;
     p.thumbnail = snapshotProgram();
     m_settings->setPreset(index, p);
 }
@@ -769,7 +770,8 @@ bool AtemPipDock::presetMatches(const PipPreset& p) const {
            same(m_view.positionX, p.positionX) && same(m_view.positionY, p.positionY) &&
            same(m_view.sizeX, p.sizeX) && same(m_view.sizeY, p.sizeY) &&
            same(m_view.cropTop, p.cropTop) && same(m_view.cropBottom, p.cropBottom) &&
-           same(m_view.cropLeft, p.cropLeft) && same(m_view.cropRight, p.cropRight);
+           same(m_view.cropLeft, p.cropLeft) && same(m_view.cropRight, p.cropRight) &&
+           m_view.cropEnabled == p.cropEnabled;
 }
 
 void AtemPipDock::recallPreset(int index) {
@@ -789,7 +791,9 @@ void AtemPipDock::recallPreset(int index) {
     for (const auto& [f, v] : values) {
         if (getField(m_view, static_cast<int>(f)) != v) edit(f, v);
     }
-    syncMask();
+    // The saved crop on/off, not "on when an edge is set": the saved picture
+    // may have had edges set with the crop off.
+    if (m_view.cropEnabled != p.cropEnabled) edit(Field::CropEnabled, p.cropEnabled ? 1.0 : 0.0);
     flushPending();
     if (m_view.onAir != p.onAir) edit(Field::OnAir, p.onAir ? 1.0 : 0.0);
 }

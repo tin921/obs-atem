@@ -148,10 +148,12 @@ bool AtemController::connectToAddress(const std::string& address) {
         });
     m_macroPool->AddCallback(m_poolCallback);
 
+    // The callback remembers which connection it belongs to (cleanup() above
+    // moved the generation on from any earlier one).
     m_switcherCallback = new SwitcherCallback(
-        [this](BMDSwitcherEventType type, BMDSwitcherVideoMode) {
+        [this, generation = m_generation.load()](BMDSwitcherEventType type, BMDSwitcherVideoMode) {
             if (type == bmdSwitcherEventTypeDisconnected && m_onConnectionLost)
-                m_onConnectionLost();
+                m_onConnectionLost(generation);
         });
     m_switcher->AddCallback(m_switcherCallback);
 
@@ -172,13 +174,18 @@ void AtemController::disconnect() {
     if (wasConnected) notifyState();
 }
 
-void AtemController::handleConnectionLost() {
+bool AtemController::handleConnectionLost(uint64_t generation) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_state == AtemState::Disconnected) return;
+    if (m_state == AtemState::Disconnected) return false;
+    if (generation != m_generation) {
+        trace("[ATEM Macros] ignored a disconnect report from an earlier connection");
+        return false;
+    }
     cleanup();
     m_lastError = "Connection to the ATEM was lost.";
     trace("[ATEM Macros] %s", m_lastError.c_str());
     notifyState();
+    return true;
 }
 
 void AtemController::shutdown() {
@@ -188,6 +195,8 @@ void AtemController::shutdown() {
 }
 
 void AtemController::cleanup() {
+    // Whatever was connected is gone: late reports from it are now stale.
+    ++m_generation;
     m_pip.detach();
 
     if (m_switcher && m_switcherCallback) m_switcher->RemoveCallback(m_switcherCallback);
@@ -257,6 +266,14 @@ bool AtemController::stopMacro() {
     if (!m_macroControl) return false;
     HRESULT hr = m_macroControl->StopRunning();
     if (FAILED(hr)) trace("[ATEM Macros] StopRunning failed hr=0x%08X", (unsigned)hr);
+    return SUCCEEDED(hr);
+}
+
+bool AtemController::resumeMacro() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_macroControl) return false;
+    HRESULT hr = m_macroControl->ResumeRunning();
+    if (FAILED(hr)) trace("[ATEM Macros] ResumeRunning failed hr=0x%08X", (unsigned)hr);
     return SUCCEEDED(hr);
 }
 

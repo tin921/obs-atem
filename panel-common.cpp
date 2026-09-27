@@ -122,6 +122,18 @@ const char* const kPanelStyleSheet = R"(
     QPushButton#stopBtn:hover {
         background: #e03a3a;
     }
+    QPushButton#resumeBtn {
+        background: #2f8a3f;
+        border: none;
+        border-radius: 3px;
+        color: white;
+        font-size: 10px;
+        font-weight: bold;
+        padding: 4px 10px;
+    }
+    QPushButton#resumeBtn:hover {
+        background: #38a34b;
+    }
 
     /* Player bar */
     #playerBar {

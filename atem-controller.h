@@ -3,6 +3,8 @@
 #include <windows.h>
 #include <string>
 #include <vector>
+#include <atomic>
+#include <cstdint>
 #include <functional>
 #include <mutex>
 
@@ -49,7 +51,8 @@ class AtemController {
 public:
     using StateChangeCallback = std::function<void(AtemState)>;
     using MacroUpdateCallback = std::function<void()>;
-    using ConnectionLostCallback = std::function<void()>;
+    // Receives the generation of the connection that reported the loss.
+    using ConnectionLostCallback = std::function<void(uint64_t generation)>;
     using TraceCallback = std::function<void(const std::string&)>;
 
     AtemController();
@@ -60,7 +63,12 @@ public:
     bool connectIP(const std::string& address);
     void disconnect();
     // Called after the switcher reported it disconnected (cable pulled, power).
-    void handleConnectionLost();
+    // Only acts if `generation` is still the current connection: a report from
+    // an earlier connection, delivered late, must not tear down a new one.
+    // Returns true if it disconnected.
+    bool handleConnectionLost(uint64_t generation);
+    // Changes whenever a connection is made or torn down.
+    uint64_t generation() const { return m_generation; }
     // Release every COM object, including the discovery object. Call before
     // COM is torn down (OBS exit); the controller cannot connect afterwards.
     void shutdown();
@@ -74,6 +82,8 @@ public:
     std::vector<AtemMacroInfo> getMacros();
     bool runMacro(uint32_t index);
     bool stopMacro();
+    // Continues a macro that is waiting for the user (a "user wait" step).
+    bool resumeMacro();
     AtemMacroRunStatus runStatus() const;
 
     // Picture-in-picture (upstream key 1 as a DVE)
@@ -102,6 +112,7 @@ private:
     AtemPip m_pip;
 
     AtemState m_state = AtemState::Disconnected;
+    std::atomic<uint64_t> m_generation{0};
     std::string m_address;
     std::string m_modelName;
     std::string m_lastError;

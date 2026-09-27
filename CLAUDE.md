@@ -82,8 +82,12 @@ This is a hard constraint from OBS, not a preference.
   fire re-entrantly: every timer/slot that calls into the controller must bail
   out while `AtemSession::isBusy()` is true.
 - Connection loss: the `IBMDSwitcherCallback` "disconnected" event →
-  `AtemController::handleConnectionLost()` on the UI thread → panels show
-  "Connection to the ATEM was lost." with a reconnect button.
+  `AtemController::handleConnectionLost(generation)` on the UI thread → panels
+  show "Connection to the ATEM was lost." with a reconnect button. Each
+  connection has a generation (bumped by every teardown); the callback carries
+  the one it was registered with, so a late report from an earlier connection
+  is ignored instead of tearing down the new one. The session also drops the
+  report while a ConnectTo is in progress (busy).
 
 ## File structure
 
@@ -94,7 +98,7 @@ obs-atem/
 ├── plugin-main.cpp             # OBS entry: creates AtemSession, registers both docks
 ├── atem-controller.h/cpp       # BMD SDK wrapper (Qt-free)
 │                               #   - USB auto-detect / IP connect, failure reasons
-│                               #   - Macro enumeration, run/stop, run status
+│                               #   - Macro enumeration, run/stop/resume, run status
 │                               #   - Switcher "disconnected" callback
 │                               #   - Owns AtemPip, attaches it on connect
 ├── atem-pip.h/cpp              # BMD SDK wrapper for PiP (Qt-free)
@@ -361,7 +365,7 @@ command above as Administrator.
 - IBMDSwitcherMacroPoolCallback::Notify(eventType, index, transferMacro*)
 - IBMDSwitcherMacroPool::IsValid() uses BOOL*, not a BMDSwitcherMacroValidity enum
 - IBMDSwitcherMacroControl::GetRunStatus(status*, loop*, index*); status can be
-  Idle, Running or WaitingForUser (treated as running)
+  Idle, Running or WaitingForUser (the panel shows RESUME → ResumeRunning)
 - IBMDSwitcherKeyFlyParametersCallback::Notify(eventType, keyFrame)
 - BMDSwitcherInputId is `long long`
 - ConnectTo failure reasons are FourCC codes (e.g. 0x63667373 'cfss' = StateSync)

@@ -87,6 +87,14 @@ void AtemMacroDock::buildUI() {
     m_runningLabel->setObjectName("runningLabel");
     playerLayout->addWidget(m_runningLabel, 1);
 
+    // Shown only while the macro waits for the user (a "user wait" step).
+    m_resumeBtn = new QPushButton("RESUME", m_playerBar);
+    m_resumeBtn->setObjectName("resumeBtn");
+    m_resumeBtn->setToolTip("Continue the macro past its \"wait for user\" step");
+    m_resumeBtn->setVisible(false);
+    connect(m_resumeBtn, &QPushButton::clicked, this, &AtemMacroDock::onResumeMacro);
+    playerLayout->addWidget(m_resumeBtn);
+
     m_stopBtn = new QPushButton("STOP", m_playerBar);
     m_stopBtn->setObjectName("stopBtn");
     connect(m_stopBtn, &QPushButton::clicked, this, &AtemMacroDock::onStopMacro);
@@ -238,6 +246,11 @@ void AtemMacroDock::onStopMacro() {
     m_session->atem().stopMacro();
 }
 
+void AtemMacroDock::onResumeMacro() {
+    m_session->atem().resumeMacro();
+    pollRunStatus();
+}
+
 void AtemMacroDock::onMacroClicked(uint32_t index) {
     m_session->atem().runMacro(index);
     pollRunStatus();
@@ -292,6 +305,7 @@ void AtemMacroDock::pollRunStatus() {
     m_runningLabel->setText(run.waitingForUser
         ? QString("⏸ %1 — waiting").arg(name)
         : QString("▶ %1").arg(name));
+    m_resumeBtn->setVisible(run.waitingForUser);
     m_playerBar->setVisible(true);
 }
 

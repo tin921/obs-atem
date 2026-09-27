@@ -25,6 +25,9 @@ struct PipPreset {
     double cropBottom = 0.0;
     double cropLeft = 0.0;
     double cropRight = 0.0;
+    // Crop (the DVE mask) on or off. Separate from the edges: another client
+    // can leave edges set with the mask off.
+    bool cropEnabled = false;
     QImage thumbnail;   // program as the panel drew it when saved
 };
 

@@ -45,6 +45,7 @@ private slots:
     void onConnectIP();
     void onSettings();
     void onStopMacro();
+    void onResumeMacro();
     void onMacroClicked(uint32_t index);
     void onConnectionChanged(AtemState state);
     void rebuildContent();
@@ -73,6 +74,7 @@ private:
     // Player bar (bottom)
     QFrame*       m_playerBar = nullptr;
     QLabel*       m_runningLabel = nullptr;
+    QPushButton*  m_resumeBtn = nullptr;
     QPushButton*  m_stopBtn = nullptr;
 
     QTimer*       m_pollTimer = nullptr;

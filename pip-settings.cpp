@@ -63,6 +63,9 @@ void PipSettings::load() {
         p.cropBottom = s.value(presetKey(i, "cropBottom")).toDouble();
         p.cropLeft = s.value(presetKey(i, "cropLeft")).toDouble();
         p.cropRight = s.value(presetKey(i, "cropRight")).toDouble();
+        // Presets saved before the flag existed: crop was on when an edge was set.
+        bool anyEdge = p.cropTop > 0 || p.cropBottom > 0 || p.cropLeft > 0 || p.cropRight > 0;
+        p.cropEnabled = s.value(presetKey(i, "cropEnabled"), anyEdge).toBool();
         p.thumbnail.loadFromData(s.value(presetKey(i, "thumbnail")).toByteArray(), "PNG");
     }
 }
@@ -176,6 +179,7 @@ void PipSettings::setPreset(int index, const PipPreset& preset) {
         s.setValue(presetKey(index, "cropBottom"), preset.cropBottom);
         s.setValue(presetKey(index, "cropLeft"), preset.cropLeft);
         s.setValue(presetKey(index, "cropRight"), preset.cropRight);
+        s.setValue(presetKey(index, "cropEnabled"), preset.cropEnabled);
 
         QByteArray png;
         QBuffer buffer(&png);
