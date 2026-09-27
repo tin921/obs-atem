@@ -12,78 +12,65 @@ BMDSwitcherAPI COM SDK — no middleware server, no external process.
 
 ---
 
+## Architecture
+
+```text
+┌─────────────────────────────────────────────────────┐
+│                     OBS Studio                      │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │
+│  │ ATEM Macros │  │ ATEM PiP    │  │ ATEM Views  │  │
+│  │ (Qt panel)  │  │ (Qt panel)  │  │ (Qt panel)  │  │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  │
+│         └────────────────┼────────────────┘         │
+│                          ▼                          │
+│         AtemSession (one shared connection)         │
+│                          │  COM calls               │
+│                          ▼                          │
+│                BMDSwitcherAPI64.dll                 │
+│        (installed by ATEM Software Control)         │
+└──────────────────────────┬──────────────────────────┘
+                           │  USB or Ethernet
+                           ▼
+                    ┌─────────────┐
+                    │  ATEM Mini  │
+                    └─────────────┘
+```
+
+<p align="center">
+  <img src="pictures/pip-panel-create.png" alt="ATEM PiP panel" width="45%">
+  &nbsp;
+  <img src="pictures/pip-panel-view.png" alt="ATEM Views panel" width="45%">
+</p>
+
+---
+
 ## Features
 
 **ATEM Macros**
 
-- **Auto-connect** — reconnects on startup the way you last connected (USB or IP)
-- **Macro grid** — 2-column grid showing all macros by name, one click to run
-- **Running indicator** — green highlight + bottom bar shows the active macro, with STOP
-  (and RESUME while the macro waits for the user)
-- **Connection-loss detection** — shows the error and a reconnect button if the ATEM goes away
-- **Settings (⚙)** — connection status, manual IP connect, troubleshooting info
+- All macros on the ATEM as buttons, one click to run
+- The running macro is highlighted, with STOP (and RESUME when it waits for you)
+- Connects on startup the way you last connected (USB or IP), with a reconnect
+  button if the ATEM goes away
+- ⚙ — connection status, manual IP connect, troubleshooting
 
 **ATEM PiP**
 
-- **Camera buttons** — top row picks the main camera, second row the PiP
-  camera; press the lit PiP camera to take the PiP off air
-- **Program preview** — drag the PiP box to move it (snaps to the safe area),
-  drag its corner to resize it
-- **Exact numbers** — X, Y, Size and crop Top/Bottom/Left/Right; arrow keys or
-  the mouse wheel on the focused box step X/Y by 0.1, Size by 0.01, crop by
-  0.1 (Shift ×10). Crop turns on by itself when any edge is non-zero
-- **Preset buttons** — "Save current to" stores cameras, PiP on/off, position,
-  size and crop on one of 20 buttons, with a thumbnail of the program. The
-  column shows seven and scrolls for the rest
-- **Settings (⚙)** — a name, colour and PNG picture per camera, used on the
-  buttons, in the preview and in the preset thumbnails (changing a picture or
-  colour redraws the thumbnails). **Export… / Import…** save and load all of
-  it as a `.json` file: names, colours, picture file *paths* (not the
-  pictures), "show names", the 20 buttons' values and the Views choice. Import
-  asks first, checks the whole file before changing anything, and lists any
-  picture it can't find on this PC so you can choose it again
-- Loads the current values from the ATEM on connect and follows changes made
-  elsewhere (ATEM Software Control, hardware buttons, macros)
-
-The layout reference is `mockups/index.html` (open it in a browser).
+- Camera buttons — top row picks the main camera, second row the PiP camera
+  (press the lit one to take the PiP off air)
+- Program preview — drag the PiP box to move it, drag its corner to resize it
+- Number boxes for position, size and crop
+- 20 preset buttons with thumbnails — save the current setup, click to recall
+- ⚙ — camera names, colours and pictures; export / import all settings
+- Follows changes made elsewhere (ATEM Software Control, hardware buttons, macros)
 
 **ATEM Views**
 
-- **View grid** — the chosen PiP buttons as pictures, two per row; click one to
-  recall it (only what differs is sent, the PiP goes on/off air last; a PiP
-  already on air that changes camera, place, size or crop goes off air first,
-  so it never shows half-changed). The one on air is lit. Works without the PiP panel open
-- **Settings (⚙)** — tick which of the 20 buttons appear and drag them (or
-  ▲ ▼) into order: left to right, top to bottom
-- Saving a button in the PiP panel updates its picture here at once
+- The chosen presets as pictures, two per row — click one to recall it; the one
+  on air is lit
+- ⚙ — pick which presets appear and in what order
 
-Both panels are normal OBS docks: show them from **Docks**, then drag them anywhere.
-
----
-
-## Architecture
-
-```text
-┌──────────────────────────────────────────────┐
-│                 OBS Studio                   │
-│  ┌──────────────────┐  ┌──────────────────┐  │
-│  │  ATEM Macros     │  │  ATEM PiP        │  │
-│  │  (Qt panel)      │  │  (Qt panel)      │  │
-│  └────────┬─────────┘  └─────────┬────────┘  │
-│           └──────────┬───────────┘           │
-│                      ▼                       │
-│        AtemSession (one shared connection)   │
-│                      │  COM calls            │
-│                      ▼                       │
-│             BMDSwitcherAPI64.dll             │
-│        (installed by ATEM Software Control)  │
-└──────────────────────┬───────────────────────┘
-                       │  USB or Ethernet
-                       ▼
-                ┌─────────────┐
-                │  ATEM Mini  │
-                └─────────────┘
-```
+All three panels are normal OBS docks: show them from **Docks**, then drag them anywhere.
 
 ---
 
@@ -177,7 +164,7 @@ use one location, not both.)
 ## Usage
 
 1. Launch OBS Studio
-2. Open **Docks → ATEM Macros** and **Docks → ATEM PiP**
+2. Open **Docks → ATEM Macros**, **ATEM PiP** and **ATEM Views**
 3. After OBS finishes loading, the plugin connects to the ATEM (USB the first
    time, then however you last connected)
 4. Click a macro to run it; click **STOP** in the bottom bar to stop it, or
@@ -241,7 +228,7 @@ this plugin reads and triggers them by index.
 ```text
 obs-atem/
 ├── CMakeLists.txt          Build config (OBS SDK + BMD SDK + Qt)
-├── plugin-main.cpp         OBS entry point: creates the session, registers both docks
+├── plugin-main.cpp         OBS entry point: creates the session, registers the three docks
 ├── atem-controller.h/cpp   BMD SDK wrapper: connection, macros, connection-loss detection
 ├── atem-pip.h/cpp          BMD SDK wrapper: inputs, upstream key DVE (PiP) state and control
 ├── bmd-util.h              COM callback template, BSTR/UTF-8 helpers
