@@ -100,6 +100,10 @@ set(ATEM_PANEL_SOURCES
     pip-settings.h
     pip-settings.cpp
     pip-widgets.h
+    pip-presets.h
+    pip-presets.cpp
+    views-dock.h
+    views-dock.cpp
     pip-widgets.cpp
     settings-dialog.h
     settings-dialog.cpp

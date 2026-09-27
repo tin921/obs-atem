@@ -20,6 +20,8 @@
 #include "atem-session.h"
 #include "macro-dock.h"
 #include "pip-dock.h"
+#include "pip-settings.h"
+#include "views-dock.h"
 
 OBS_DECLARE_MODULE()
 // No locale files: the plugin is English only, so its text is in the code and
@@ -81,8 +83,12 @@ bool obs_module_load(void) {
 
     session = new AtemSession();
 
+    // Camera looks and saved PiP presets, shared by the PiP and Views panels.
+    auto* pipSettings = new PipSettings(session);
+
     addDock(mainWindow, "AtemMacroDock", "ATEM Macros", new AtemMacroDock(session));
-    addDock(mainWindow, "AtemPipDock", "ATEM PiP", new AtemPipDock(session));
+    addDock(mainWindow, "AtemPipDock", "ATEM PiP", new AtemPipDock(session, pipSettings));
+    addDock(mainWindow, "AtemViewsDock", "ATEM Views", new AtemViewsDock(session, pipSettings));
 
     obs_frontend_add_event_callback(frontend_event_handler, nullptr);
 

@@ -7,7 +7,11 @@ COM SDK. No middleware server, no browser dock, no external process.
 
 - **ATEM Macros** panel — trigger the macros stored on the ATEM
 - **ATEM PiP** panel — main and PiP camera, position/size/crop of the PiP
-  box, seven preset buttons; layout reference `mockups/index.html`
+  box, 20 preset buttons (7 visible, the column scrolls); layout reference
+  `mockups/index.html`
+- **ATEM Views** panel — the operator's launcher for those presets ("views"),
+  like the macro panel for macros: chosen presets as pictures in 2 columns,
+  click to recall; ⚙ picks which and their order
 
 The plugin is developed and tested against the real ATEM device only.
 
@@ -37,11 +41,12 @@ This is a hard constraint from OBS, not a preference.
 ```
 ┌──────────────────────────────────────────────┐
 │                 OBS Studio                   │
-│  ┌──────────────────┐  ┌──────────────────┐  │
-│  │  AtemMacroDock   │  │  AtemPipDock     │  │
-│  │  (QWidget)       │  │  (QWidget)       │  │
-│  └────────┬─────────┘  └─────────┬────────┘  │
-│           └──────────┬───────────┘           │
+│  ┌────────────┐ ┌────────────┐ ┌───────────┐ │
+│  │ AtemMacro  │ │ AtemPip    │ │ AtemViews │ │
+│  │ Dock       │ │ Dock       │ │ Dock      │ │
+│  └─────┬──────┘ └─────┬──────┘ └─────┬─────┘ │
+│        │        PipSettings (shared) │       │
+│        └──────────────┬──────────────┘       │
 │                      ▼                       │
 │   AtemSession (QObject) — one shared         │
 │   connection; SDK callbacks → Qt signals     │
@@ -116,6 +121,9 @@ obs-atem/
 │                               #   shared with preset thumbnails; PipGeometry
 ├── pip-widgets.h/cpp           # PictureButton (CamButton, PresetButton), PipSpinBox
 ├── pip-settings.h/cpp          # Camera names/colours/pictures + presets (QSettings "pip/...")
+│                               #   + Views choice ("views/slots")
+├── pip-presets.h/cpp           # Preset match + recall, shared by PiP and Views
+├── views-dock.h/cpp            # ATEM Views panel: chosen presets, 2 columns, ⚙ order
 ├── settings-dialog.h/cpp       # ⚙ dialog: status, USB/IP connect, connection log, troubleshooting
 ├── obs-log.h                   # blog(): libobs inside OBS, stderr elsewhere
 ├── harness/main.cpp            # atem-harness: both panels + "ATEM log" dock (SDK calls)
@@ -176,9 +184,15 @@ values).
   values at ~30 Hz, and holds each edited field until the device echoes it (or
   400 ms) so stale echoes don't make values jump back. Fields being typed or
   dragged are never overwritten.
-- Presets (7) store cameras, on-air, position, size, crop and a 192×108
+- Presets (20; the column is the size of 7 and scrolls) store cameras,
+  on-air, position, size, crop, crop on/off and a 192×108
   thumbnail drawn by `PipPreview::paintProgram` from the camera pictures /
   colours (not real video). Recall sends only what differs, on-air last.
+- One PipSettings object is shared by the PiP and Views panels (created in
+  obs_module_load / the harness), so saving a preset updates Views at once.
+  Views recalls through `recallPipPreset()` (pip-presets.cpp) straight to the
+  switcher and lights the view matching `session.pip().state()`; it does not
+  need the PiP panel. Its choice is QSettings `views/slots` ("1,10,20").
 - Settings live in QSettings group `pip` (camera N name/color/picture path,
   showNames, presetN/...); shared by the plugin and the harness.
 - Open question for the user: preset thumbnails from real ATEM video in OBS

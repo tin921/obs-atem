@@ -6,7 +6,9 @@ BMDSwitcherAPI COM SDK — no middleware server, no external process.
 
 - **ATEM Macros** — one-click buttons for the macros stored on the ATEM
 - **ATEM PiP** — pick the main and picture-in-picture cameras, move, scale
-  and crop the PiP box, and recall saved setups with one click
+  and crop the PiP box, and save setups ("views") on up to 20 buttons
+- **ATEM Views** — the saved views as pictures in two columns, one click to
+  recall; you choose which appear and in what order
 
 ---
 
@@ -31,13 +33,23 @@ BMDSwitcherAPI COM SDK — no middleware server, no external process.
   the mouse wheel on the focused box step X/Y by 0.1, Size by 0.01, crop by
   0.1 (Shift ×10). Crop turns on by itself when any edge is non-zero
 - **Preset buttons** — "Save current to" stores cameras, PiP on/off, position,
-  size and crop on one of seven buttons, with a thumbnail of the program
+  size and crop on one of 20 buttons, with a thumbnail of the program. The
+  column shows seven and scrolls for the rest
 - **Settings (⚙)** — a name, colour and PNG picture per camera, used on the
   buttons, in the preview and in the preset thumbnails
 - Loads the current values from the ATEM on connect and follows changes made
   elsewhere (ATEM Software Control, hardware buttons, macros)
 
 The layout reference is `mockups/index.html` (open it in a browser).
+
+**ATEM Views**
+
+- **View grid** — the chosen PiP buttons as pictures, two per row; click one to
+  recall it (only what differs is sent, the PiP goes on/off air last). The one
+  on air is lit. Works without the PiP panel open
+- **Settings (⚙)** — tick which of the 20 buttons appear and drag them (or
+  ▲ ▼) into order: left to right, top to bottom
+- Saving a button in the PiP panel updates its picture here at once
 
 Both panels are normal OBS docks: show them from **Docks**, then drag them anywhere.
 
@@ -233,7 +245,9 @@ obs-atem/
 ├── pip-dock.h/cpp          ATEM PiP panel
 ├── pip-preview.h/cpp       Program preview (drag/resize) and preset thumbnails
 ├── pip-widgets.h/cpp       Camera/preset picture buttons, number boxes
-├── pip-settings.h/cpp      Camera names/colours/pictures and presets (saved)
+├── pip-settings.h/cpp      Camera names/colours/pictures, presets and the Views choice (saved)
+├── pip-presets.h/cpp       Preset matching and recall, shared by the PiP and Views panels
+├── views-dock.h/cpp        ATEM Views panel
 ├── settings-dialog.h/cpp   Connection settings, connection log + troubleshooting dialog
 ├── obs-log.h               blog() shim so panel code also builds outside OBS
 ├── harness/main.cpp        Standalone Qt host for the panels

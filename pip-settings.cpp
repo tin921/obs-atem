@@ -48,6 +48,16 @@ void PipSettings::load() {
     }
     m_showNames = s.value("pip/showNames", false).toBool();
 
+    m_viewSlots.clear();
+    if (s.contains("views/slots")) {
+        for (const QString& n : s.value("views/slots").toString().split(',', Qt::SkipEmptyParts)) {
+            int index = n.toInt() - 1;   // stored 1-based, like the button numbers
+            if (index >= 0 && index < kPresetCount && !m_viewSlots.contains(index)) m_viewSlots.append(index);
+        }
+    } else {
+        for (int i = 0; i < kVisiblePresets; ++i) m_viewSlots.append(i);
+    }
+
     for (int i = 0; i < kPresetCount; ++i) {
         PipPreset& p = m_presets[i];
         p.valid = s.value(presetKey(i, "valid"), false).toBool();
@@ -151,6 +161,18 @@ void PipSettings::setShowNames(bool show) {
     if (m_showNames == show) return;
     m_showNames = show;
     QSettings(kSettingsOrg, kSettingsApp).setValue("pip/showNames", show);
+    emit changed();
+}
+
+void PipSettings::setViewSlots(const QList<int>& order) {
+    QList<int> clean;
+    for (int index : order)
+        if (index >= 0 && index < kPresetCount && !clean.contains(index)) clean.append(index);
+    if (clean == m_viewSlots) return;
+    m_viewSlots = clean;
+    QStringList numbers;
+    for (int index : clean) numbers << QString::number(index + 1);
+    QSettings(kSettingsOrg, kSettingsApp).setValue("views/slots", numbers.join(','));
     emit changed();
 }
 

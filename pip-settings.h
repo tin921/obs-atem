@@ -2,6 +2,7 @@
 
 #include <QColor>
 #include <QImage>
+#include <QList>
 #include <QObject>
 #include <QPixmap>
 #include <QString>
@@ -39,7 +40,8 @@ class PipSettings : public QObject {
     Q_OBJECT
 public:
     static constexpr int kCameraCount = 4;
-    static constexpr int kPresetCount = 7;
+    static constexpr int kPresetCount = 20;
+    static constexpr int kVisiblePresets = 7;   // the PiP panel's preset column shows 7, scrolls for more
 
     // ATEM Mini HDMI inputs 1–4.
     static BMDSwitcherInputId cameraInput(int camera) { return camera + 1; }
@@ -69,6 +71,11 @@ public:
     const PipPreset& preset(int index) const { return m_presets[index]; }
     void setPreset(int index, const PipPreset& preset);
 
+    // The Views panel: which presets it shows, in grid order (0-based
+    // preset indices; default 0–6).
+    const QList<int>& viewSlots() const { return m_viewSlots; }
+    void setViewSlots(const QList<int>& order);
+
 signals:
     void changed();
 
@@ -87,4 +94,5 @@ private:
     std::array<PipPreset, kPresetCount> m_presets;
     std::map<BMDSwitcherInputId, QString> m_deviceNames;
     bool m_showNames = false;
+    QList<int> m_viewSlots;
 };

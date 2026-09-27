@@ -20,6 +20,7 @@ class QComboBox;
 class QLabel;
 class QLineEdit;
 class QPushButton;
+class QScrollArea;
 class QStackedWidget;
 class QToolButton;
 
@@ -28,7 +29,9 @@ class QToolButton;
 // Layout (mockups/index.html is the reference):
 //   camera row 1  — main (program) camera, one lit
 //   camera row 2  — PiP camera; press the lit one to take the PiP off air
-//   presets 1–7   | program preview (drag = move, corner = resize)
+//   presets 1–20  | program preview (drag = move, corner = resize)
+//   (7 visible,   |
+//    scrolls)     |
 //                 | Position X / Y / Size
 //                 | Crop Top / Bottom / Left / Right (mask on when any > 0)
 //                 | Save current to [Button n] [Save]
@@ -41,7 +44,8 @@ class QToolButton;
 class AtemPipDock : public QWidget {
     Q_OBJECT
 public:
-    explicit AtemPipDock(AtemSession* session, QWidget* parent = nullptr);
+    // `settings` is shared with the Views panel (camera looks, presets).
+    AtemPipDock(AtemSession* session, PipSettings* settings, QWidget* parent = nullptr);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -84,7 +88,6 @@ private:
 
     void savePreset(int index);
     void recallPreset(int index);
-    bool presetMatches(const PipPreset& preset) const;
     QImage snapshotProgram() const;
 
     void chooseColor(int camera);
@@ -103,6 +106,7 @@ private:
 
     QWidget* m_body = nullptr;
     QWidget* m_presetColumn = nullptr;
+    QScrollArea* m_presetScroll = nullptr;
     QWidget* m_dveWarning = nullptr;
     QPushButton* m_makeDveBtn = nullptr;
     std::vector<CamButton*> m_mainButtons;

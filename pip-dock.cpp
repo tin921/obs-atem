@@ -1,5 +1,6 @@
 #include "pip-dock.h"
 #include "panel-common.h"
+#include "pip-presets.h"
 #include "pip-preview.h"
 #include "pip-settings.h"
 #include "pip-widgets.h"
@@ -19,6 +20,7 @@
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QStackedWidget>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -46,10 +48,10 @@ constexpr int kFlushIntervalMs = 33;
 // After an edit the panel shows its own value until the switcher echoes it
 // back (or this long passes), so stale echoes don't make values jump back.
 constexpr int kHoldMs = 400;
-constexpr double kMatchTolerance = 0.005;
 
 constexpr int kPresetThumbWidth = 192;
 constexpr int kPresetThumbHeight = 108;
+constexpr int kPresetScrollbarWidth = 6;
 
 const char* const kPipExtraStyle = R"(
     #groupLabel {
@@ -83,6 +85,25 @@ const char* const kPipExtraStyle = R"(
     }
     QCheckBox {
         font-size: 11px;
+    }
+    #presetScroll, #presetColumn {
+        background: transparent;
+    }
+    #presetScroll QScrollBar:vertical {
+        width: 6px;
+        background: #1e1e1e;
+        margin: 0;
+    }
+    #presetScroll QScrollBar::handle:vertical {
+        background: #4a4a4a;
+        border-radius: 3px;
+        min-height: 20px;
+    }
+    #presetScroll QScrollBar::add-line:vertical, #presetScroll QScrollBar::sub-line:vertical {
+        height: 0;
+    }
+    #presetScroll QScrollBar::add-page:vertical, #presetScroll QScrollBar::sub-page:vertical {
+        background: none;
     }
 )";
 
@@ -143,8 +164,8 @@ QPixmap swatch(const QColor& color, const QSize& size) {
 
 // ── AtemPipDock ──────────────────────────────────────────────
 
-AtemPipDock::AtemPipDock(AtemSession* session, QWidget* parent)
-    : QWidget(parent), m_session(session), m_settings(new PipSettings(this))
+AtemPipDock::AtemPipDock(AtemSession* session, PipSettings* settings, QWidget* parent)
+    : QWidget(parent), m_session(session), m_settings(settings)
 {
     applyPanelStyle(this, kPipExtraStyle);
 
@@ -286,7 +307,15 @@ QWidget* AtemPipDock::buildControlsPage() {
     auto* stage = new QHBoxLayout();
     stage->setSpacing(6);
 
-    m_presetColumn = new QWidget(m_body);
+    // All presets in a column that scrolls; its box is the size of the first
+    // seven (kVisiblePresets), so the layout is the same as with seven.
+    m_presetScroll = new QScrollArea(m_body);
+    m_presetScroll->setObjectName("presetScroll");
+    m_presetScroll->setFrameShape(QFrame::NoFrame);
+    m_presetScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_presetScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+    m_presetColumn = new QWidget();
+    m_presetColumn->setObjectName("presetColumn");
     auto* presetLayout = new QVBoxLayout(m_presetColumn);
     presetLayout->setContentsMargins(0, 0, 0, 0);
     presetLayout->setSpacing(3);
@@ -296,7 +325,8 @@ QWidget* AtemPipDock::buildControlsPage() {
         presetLayout->addWidget(btn);
         m_presetButtons.push_back(btn);
     }
-    stage->addWidget(m_presetColumn, 0, Qt::AlignTop);
+    m_presetScroll->setWidget(m_presetColumn);
+    stage->addWidget(m_presetScroll, 0, Qt::AlignTop);
 
     // The right column fills the preset column's height and spreads the
     // spare space evenly, so "Save current to" lines up with the last preset.
@@ -521,10 +551,19 @@ void AtemPipDock::layoutStage() {
     for (auto* b : m_mainButtons) b->setFixedHeight(camHeight);
     for (auto* b : m_pipButtons) b->setFixedHeight(camHeight);
 
+    // The preset box keeps exactly the size seven full-width buttons had, so
+    // the layout (and the save row level with the box's bottom) is unchanged.
+    // The buttons inside give up the slim scrollbar's width, so they are a
+    // little smaller and the next one peeks in at the bottom: it scrolls.
     int presetWidth = std::max(64, static_cast<int>(std::lround(0.125 * w + 27)));
-    m_presetColumn->setFixedWidth(presetWidth);
-    int presetHeight = static_cast<int>(std::lround(presetWidth * 9.0 / 16));
+    int boxHeight = PipSettings::kVisiblePresets * static_cast<int>(std::lround(presetWidth * 9.0 / 16)) +
+                    (PipSettings::kVisiblePresets - 1) * 3;
+    int buttonWidth = presetWidth - kPresetScrollbarWidth - 2;
+    int presetHeight = static_cast<int>(std::lround(buttonWidth * 9.0 / 16));
     for (auto* b : m_presetButtons) b->setFixedHeight(presetHeight);
+    m_presetColumn->setFixedWidth(buttonWidth);
+    m_presetScroll->setFixedSize(presetWidth, boxHeight);
+    m_presetScroll->verticalScrollBar()->setSingleStep(presetHeight + 3);
 
     m_preview->setFixedHeight(static_cast<int>(std::lround((w - presetWidth - 6) * 9.0 / 16)));
 }
@@ -656,7 +695,7 @@ void AtemPipDock::render() {
 
     for (int i = 0; i < PipSettings::kPresetCount; ++i) {
         const PipPreset& p = m_settings->preset(i);
-        m_presetButtons[i]->setLit(p.valid && presetMatches(p));
+        m_presetButtons[i]->setLit(pipPresetMatches(p, m_view));
         m_presetButtons[i]->setToolTip(p.valid
             ? QString("Button %1: main %2 · PiP %3 · X %4 Y %5 · size %6")
                   .arg(i + 1).arg(m_settings->name(p.programInput))
@@ -761,17 +800,6 @@ void AtemPipDock::savePreset(int index) {
     p.cropEnabled = m_view.cropEnabled;
     p.thumbnail = snapshotProgram();
     m_settings->setPreset(index, p);
-}
-
-bool AtemPipDock::presetMatches(const PipPreset& p) const {
-    auto same = [](double a, double b) { return std::abs(a - b) < kMatchTolerance; };
-    return m_view.programInput == p.programInput && m_view.pipInput == p.pipInput &&
-           m_view.onAir == p.onAir &&
-           same(m_view.positionX, p.positionX) && same(m_view.positionY, p.positionY) &&
-           same(m_view.sizeX, p.sizeX) && same(m_view.sizeY, p.sizeY) &&
-           same(m_view.cropTop, p.cropTop) && same(m_view.cropBottom, p.cropBottom) &&
-           same(m_view.cropLeft, p.cropLeft) && same(m_view.cropRight, p.cropRight) &&
-           m_view.cropEnabled == p.cropEnabled;
 }
 
 void AtemPipDock::recallPreset(int index) {

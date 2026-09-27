@@ -35,6 +35,8 @@
 #include "atem-session.h"
 #include "macro-dock.h"
 #include "pip-dock.h"
+#include "pip-settings.h"
+#include "views-dock.h"
 
 static QDockWidget* addDock(QMainWindow& window, QMenu* docksMenu, const char* id,
                             const char* title, QWidget* panel, Qt::DockWidgetArea area) {
@@ -76,10 +78,15 @@ int main(int argc, char** argv) {
         auto* docksMenu = window.menuBar()->addMenu("&Docks");
         auto* macros = addDock(window, docksMenu, "AtemMacroDock", "ATEM Macros",
                                new AtemMacroDock(&session), Qt::RightDockWidgetArea);
+        PipSettings pipSettings;   // shared by the PiP and Views panels, as in the plugin
         auto* pip = addDock(window, docksMenu, "AtemPipDock", "ATEM PiP",
-                            new AtemPipDock(&session), Qt::RightDockWidgetArea);
+                            new AtemPipDock(&session, &pipSettings), Qt::RightDockWidgetArea);
         window.splitDockWidget(macros, pip, Qt::Horizontal);
         pip->setMinimumWidth(320);
+        auto* views = addDock(window, docksMenu, "AtemViewsDock", "ATEM Views",
+                              new AtemViewsDock(&session, &pipSettings), Qt::RightDockWidgetArea);
+        window.splitDockWidget(pip, views, Qt::Horizontal);
+        views->setMinimumWidth(220);
 
         auto* log = new QPlainTextEdit();
         log->setReadOnly(true);
