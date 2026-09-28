@@ -36,6 +36,14 @@ BMDSwitcherAPI COM SDK — no middleware server, no external process.
                     └─────────────┘
 ```
 
+Set up any main / PiP combination in the PiP panel, use your own picture to
+stand for each input source, save it as a view — then one click in OBS
+recalls it on the ATEM.
+
+<p align="center">
+  <img src="pictures/obs-views.png" alt="The ATEM Views panel docked in OBS Studio" width="92%">
+</p>
+
 <p align="center">
   <img src="pictures/pip-panel-create.png" alt="ATEM PiP panel" width="45%">
   &nbsp;
