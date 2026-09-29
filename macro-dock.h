@@ -63,6 +63,7 @@ private:
 
     // Header
     PanelHeader*  m_header = nullptr;
+    class ErrorLine* m_error = nullptr;
     QToolButton*  m_settingsBtn = nullptr;
     QToolButton*  m_refreshBtn = nullptr;
 

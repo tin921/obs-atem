@@ -6,6 +6,7 @@
 #include <atomic>
 
 #include "atem-controller.h"
+#include "pip-presets.h"
 
 // One ATEM connection shared by every panel (macros, PiP).
 //
@@ -35,6 +36,11 @@ public:
     const QStringList& traceHistory() const { return m_traceHistory; }
 
     // All blocking: BMD's ConnectTo runs on the calling (UI) thread.
+    // Recalls a saved view on the switcher. presetRecalling() goes out first,
+    // so a panel with its own edits in flight drops them and can't send the
+    // old values over the recalled view afterwards.
+    PipRecallResult recallPreset(const PipPreset& preset);
+
     bool connectUSB();
     bool connectIP(const QString& address);
     bool autoConnect();
@@ -45,6 +51,7 @@ signals:
     void connectionChanged(AtemState state);
     void macrosChanged();
     void pipChanged();
+    void presetRecalling();
     void traceMessage(const QString& line);
 
 private:
@@ -56,5 +63,6 @@ private:
     AtemController m_atem;
     QStringList m_traceHistory;
     bool m_busy = false;
+    bool m_shutdownPending = false;   // asked to shut down during a ConnectTo
     std::atomic<bool> m_pipChangePending{false};
 };

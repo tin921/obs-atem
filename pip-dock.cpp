@@ -179,6 +179,9 @@ AtemPipDock::AtemPipDock(AtemSession* session, PipSettings* settings, QWidget* p
 
     m_dveRetryTimer.setInterval(100);
     connect(&m_dveRetryTimer, &QTimer::timeout, this, [this]() {
+        // ConnectTo can pump this timer re-entrantly (the controller lock is
+        // held then); a reconnect stops it (onConnectionChanged).
+        if (m_session->isBusy()) return;
         bool done = m_session->isConnected() && m_session->pip().makeDVE();
         if (done || ++m_dveRetries >= 20) {
             m_dveRetryTimer.stop();
@@ -194,6 +197,13 @@ AtemPipDock::AtemPipDock(AtemSession* session, PipSettings* settings, QWidget* p
 
     connect(m_session, &AtemSession::connectionChanged, this, &AtemPipDock::onConnectionChanged);
     connect(m_session, &AtemSession::pipChanged, this, &AtemPipDock::refreshFromDevice);
+    // Another panel (Views) recalls a view: this panel's queued edits and
+    // holds are older than it and must not be sent over it or shown instead.
+    connect(m_session, &AtemSession::presetRecalling, this, [this]() {
+        m_flushTimer.stop();
+        m_pending.clear();
+        m_holds.clear();
+    });
     // Thumbnails only change with the settings; render() runs on every echo.
     auto settingsChanged = [this]() {
         for (int i = 0; i < PipSettings::kPresetCount; ++i)
@@ -224,6 +234,8 @@ void AtemPipDock::buildUI() {
         m_pages->setCurrentWidget(m_settingsPage);
     });
     mainLayout->addWidget(m_header);
+    m_error = new ErrorLine(this);
+    mainLayout->addWidget(m_error);
 
     m_pages = new QStackedWidget(this);
     mainLayout->addWidget(m_pages, 1);
@@ -389,6 +401,13 @@ QWidget* AtemPipDock::buildControlsPage() {
                 if (f == Field::SizeX) editSize(v);
                 else if (f >= Field::CropTop) editCrop(f, v);
                 else edit(f, v);
+            });
+            // While a box has the focus the device's value isn't shown in it;
+            // once editing ends, show the latest (a macro or another client
+            // may have changed it meanwhile). What was typed is held until its
+            // echo, so it isn't replaced.
+            connect(box, &QAbstractSpinBox::editingFinished, this, [this]() {
+                QTimer::singleShot(0, this, &AtemPipDock::refreshFromDevice);
             });
         }
         right->addLayout(grid);
@@ -674,6 +693,8 @@ void AtemPipDock::layoutStage() {
 
 void AtemPipDock::onConnectionChanged(AtemState state) {
     updateStatus();
+    m_dveRetryTimer.stop();              // it was for the previous connection
+    m_makeDveBtn->setEnabled(true);
     if (state == AtemState::Connecting) return;
     m_pending.clear();
     m_holds.clear();
@@ -717,7 +738,13 @@ void AtemPipDock::refreshFromDevice() {
         return;
     }
     if (!onSettings) m_pages->setCurrentWidget(m_controlsPage);
-    m_settings->setDeviceInputs(pip.inputs());
+    // The input list (names) is read at most every 2 s: every PiP change
+    // notification lands here, and a preview drag makes bursts of them.
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    if (!m_viewLoaded || nowMs - m_inputsReadAt >= 2000) {
+        m_settings->setDeviceInputs(pip.inputs());
+        m_inputsReadAt = nowMs;
+    }
 
     if (!m_viewLoaded) {
         m_view = s;
@@ -818,17 +845,24 @@ void AtemPipDock::edit(Field field, double value) {
     m_holdTimer.start(kHoldMs + 50);
 
     AtemPip& pip = m_session->pip();
+    bool ok = true;
     if (isContinuous(i)) {
         m_pending[toPipField(i)] = value;
         if (!m_flushTimer.isActive()) m_flushTimer.start();
     } else if (field == Field::Program) {
-        pip.setProgramInput(m_view.programInput);
+        ok = pip.setProgramInput(m_view.programInput);
     } else if (field == Field::Pip) {
-        pip.setPipInput(m_view.pipInput);
+        ok = pip.setPipInput(m_view.pipInput);
     } else if (field == Field::OnAir) {
-        pip.setOnAir(m_view.onAir);
+        ok = pip.setOnAir(m_view.onAir);
     } else if (field == Field::CropEnabled) {
-        pip.setCropEnabled(m_view.cropEnabled);
+        ok = pip.setCropEnabled(m_view.cropEnabled);
+    }
+    if (!ok) {
+        // Not what the switcher shows: drop the local value and read it back.
+        m_holds.erase(field);
+        m_error->show("The switcher refused the change: " + QString::fromStdString(m_session->atem().lastError()));
+        QTimer::singleShot(0, this, &AtemPipDock::refreshFromDevice);
     }
     render();
 }
@@ -871,7 +905,13 @@ void AtemPipDock::flushPending() {
     }
     auto pending = std::move(m_pending);
     m_pending.clear();
-    for (const auto& [field, value] : pending) m_session->pip().setValue(field, value);
+    bool ok = true;
+    for (const auto& [field, value] : pending) ok = m_session->pip().setValue(field, value) && ok;
+    if (!ok) {
+        m_holds.clear();
+        m_error->show("The switcher refused a position, size or crop value.");
+        QTimer::singleShot(0, this, &AtemPipDock::refreshFromDevice);
+    }
 }
 
 // ── Presets ──────────────────────────────────────────────────
@@ -930,6 +970,10 @@ void AtemPipDock::savePreset(int index) {
 void AtemPipDock::recallPreset(int index) {
     const PipPreset& p = m_settings->preset(index);
     if (!p.valid || !m_viewLoaded || !m_session->isConnected()) return;
+    if (QString why = pipPresetBlocked(p, m_view); !why.isEmpty()) {
+        m_error->show(QString("Button %1: %2").arg(index + 1).arg(why));
+        return;
+    }
 
     // Send only what differs. Sources and geometry first, the on-air change
     // last, so the PiP appears already in its new place. A PiP on air that

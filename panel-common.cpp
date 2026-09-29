@@ -225,6 +225,23 @@ PanelHeader::PanelHeader(const QString& title, QWidget* parent)
     layout->addWidget(m_status, 1);
 }
 
+ErrorLine::ErrorLine(QWidget* parent)
+    : QLabel(parent), m_timer(new QTimer(this))
+{
+    setWordWrap(true);
+    setStyleSheet("QLabel { color: #ff8a80; background: #3a1f1f; padding: 3px 8px; }");
+    m_timer->setSingleShot(true);
+    m_timer->setInterval(8000);
+    connect(m_timer, &QTimer::timeout, this, &QWidget::hide);
+    hide();
+}
+
+void ErrorLine::show(const QString& message) {
+    setText(message);
+    QLabel::show();
+    m_timer->start();
+}
+
 QToolButton* PanelHeader::addToolButton(const QString& text, const QString& tooltip) {
     auto* btn = new QToolButton(this);
     btn->setText(text);

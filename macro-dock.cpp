@@ -68,6 +68,8 @@ void AtemMacroDock::buildUI() {
     m_settingsBtn = m_header->addToolButton("⚙", "Connection settings");
     connect(m_settingsBtn, &QToolButton::clicked, this, &AtemMacroDock::onSettings);
     mainLayout->addWidget(m_header);
+    m_error = new ErrorLine(this);
+    mainLayout->addWidget(m_error);
 
     m_contentArea = new QWidget(this);
     m_contentLayout = new QVBoxLayout(m_contentArea);
@@ -243,16 +245,21 @@ void AtemMacroDock::onSettings() {
 }
 
 void AtemMacroDock::onStopMacro() {
-    m_session->atem().stopMacro();
+    if (!m_session->atem().stopMacro())
+        m_error->show("The macro could not be stopped: " + QString::fromStdString(m_session->atem().lastError()));
 }
 
 void AtemMacroDock::onResumeMacro() {
-    m_session->atem().resumeMacro();
+    if (!m_session->atem().resumeMacro())
+        m_error->show("The macro could not continue: " + QString::fromStdString(m_session->atem().lastError()));
     pollRunStatus();
 }
 
 void AtemMacroDock::onMacroClicked(uint32_t index) {
-    m_session->atem().runMacro(index);
+    if (m_session->isBusy()) return;
+    if (!m_session->atem().runMacro(index))
+        m_error->show(QString("Macro %1 did not start: %2").arg(index + 1)
+                          .arg(QString::fromStdString(m_session->atem().lastError())));
     pollRunStatus();
 }
 

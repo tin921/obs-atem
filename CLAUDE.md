@@ -13,7 +13,9 @@ COM SDK. No middleware server, no browser dock, no external process.
   like the macro panel for macros: chosen presets as pictures in 2 columns,
   click to recall; ⚙ picks which and their order
 
-The plugin is developed and tested against the real ATEM device only.
+The plugin is tested against the real ATEM Mini. Offline development and the
+panel tests use the atem-emulator project (D:\cemc-sr\atem-emulator) at
+127.0.0.2; the README does not mention it.
 
 ## Why C++ was selected
 
@@ -100,7 +102,7 @@ This is a hard constraint from OBS, not a preference.
 obs-atem/
 ├── CMakeLists.txt              # Targets: obs-atem (plugin), atem-harness, atem-cli
 ├── CLAUDE.md / README.md / CONTRIBUTING.md
-├── plugin-main.cpp             # OBS entry: creates AtemSession, registers both docks
+├── plugin-main.cpp             # OBS entry: creates AtemSession, registers the three docks
 ├── atem-controller.h/cpp       # BMD SDK wrapper (Qt-free)
 │                               #   - USB auto-detect / IP connect, failure reasons
 │                               #   - Macro enumeration, run/stop/resume, run status
@@ -126,7 +128,7 @@ obs-atem/
 ├── views-dock.h/cpp            # ATEM Views panel: chosen presets, 2 columns, ⚙ order
 ├── settings-dialog.h/cpp       # ⚙ dialog: status, USB/IP connect, connection log, troubleshooting
 ├── obs-log.h                   # blog(): libobs inside OBS, stderr elsewhere
-├── harness/main.cpp            # atem-harness: both panels + "ATEM log" dock (SDK calls)
+├── harness/main.cpp            # atem-harness: the three panels + "ATEM log" dock (SDK calls)
 ├── cli/main.cpp                # atem-cli: info | pip | run N | stop [--ip ADDR]
 ├── mockups/                    # index.html = PiP layout reference; drafts.html = earlier A/B/C
 ├── scripts/gen-obs-libs.ps1    # Generates obs.lib / obs-frontend-api.lib into build\
@@ -193,9 +195,18 @@ values).
   the new camera flashed in the old box and jumped (seen on the church PC).
 - One PipSettings object is shared by the PiP and Views panels (created in
   obs_module_load / the harness), so saving a preset updates Views at once.
-  Views recalls through `recallPipPreset()` (pip-presets.cpp) straight to the
-  switcher and lights the view matching `session.pip().state()`; it does not
-  need the PiP panel. Its choice is QSettings `views/slots` ("1,10,20").
+  Views recalls through `AtemSession::recallPreset()` → `recallPipPreset()`
+  (pip-presets.cpp) straight to the switcher and lights the view matching
+  `session.pip().state()`; it does not need the PiP panel. The session emits
+  `presetRecalling()` first, so the PiP panel drops its queued edits and holds
+  (they would otherwise be sent over the recalled view). Its choice is
+  QSettings `views/slots` ("1,10,20").
+- A view whose PiP is on air only matches, and is only recalled, when
+  upstream key 1 is a DVE key and the DVE isn't held by a DVE transition
+  (`pipPresetBlocked`); otherwise the panel says why and sends nothing.
+  Recall stops at the first command the switcher refuses. Refused actions
+  (recall, camera buttons, number boxes, macro run/stop) show on the panel's
+  `ErrorLine` under the header for a few seconds.
 - Settings live in QSettings group `pip` (camera N name/color/picture path,
   showNames, presetN/...); shared by the plugin and the harness.
 - Thumbnails stay drawn from camera pictures, not real video (user decision
@@ -208,9 +219,14 @@ values).
 - ⚙ Export / Import (`PipSettings::exportJson` / `importJson`): JSON with
   `"format": "obs-atem-pip", "version": 1`, cameras (name, colour, picture
   *path*), showNames, the valid presets' values (no thumbnails) and `views`.
-  Import validates the whole file first and changes nothing on any error;
-  pictures that don't load are cleared and reported (the camera uses its
-  colour until the user chooses the picture again).
+  Import validates the whole file first and changes nothing on any error:
+  version exactly 1, `cameras` and `presets` present as lists (a missing
+  list must never clear the presets), entries objects, no duplicate camera,
+  button or view, and values inside structural limits (inputs 0–65535,
+  position ±1000, size 0–4, crop 0–100; generous on purpose, a preset may
+  hold a PiP parked off screen). Presets loaded from the registry get the same
+  limits. Pictures that don't load are cleared and reported (the camera uses
+  its colour until the user chooses the picture again).
 
 ## Build requirements (Windows only)
 
@@ -364,7 +380,7 @@ command above as Administrator.
 1. `atem-cli` (USB) or `atem-cli --ip 192.168.10.240` — confirms the SDK
    connection, lists macros, inputs and the live PiP values.
 2. `atem-cli run N` / `atem-cli stop` — macro control without any UI.
-3. `atem-harness.exe` — both panels in a plain window, debuggable in VS,
+3. `atem-harness.exe` — the three panels in a plain window, debuggable in VS,
    with an "ATEM log" dock showing every SDK call. Same panel sources as the
    plugin; only plugin-main.cpp is OBS-specific. Needs the Qt `bin` folder on
    PATH (or `windeployqt`).

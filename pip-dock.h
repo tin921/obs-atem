@@ -100,6 +100,7 @@ private:
     PipSettings* m_settings;
 
     PanelHeader*    m_header = nullptr;
+    class ErrorLine* m_error = nullptr;
     QStackedWidget* m_pages = nullptr;
     QWidget*        m_offlinePage = nullptr;
     QLabel*         m_offlineText = nullptr;
@@ -135,6 +136,7 @@ private:
     QTimer m_flushTimer;
     QTimer m_dveRetryTimer;     // retries makeDVE while the DVE is being freed
     int m_dveRetries = 0;
+    qint64 m_inputsReadAt = 0;  // when the input names were last read (ms since epoch)
     QLabel* m_dveWarningText = nullptr;
     QTimer m_holdTimer;
 };

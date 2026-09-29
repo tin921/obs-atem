@@ -27,7 +27,7 @@ OBS_DECLARE_MODULE()
 // No locale files: the plugin is English only, so its text is in the code and
 // OBS has no data/locale/*.ini to look for.
 
-// Shared by both panels; lives until module unload.
+// Shared by the panels; lives until module unload.
 static AtemSession* session = nullptr;
 
 const char* obs_module_name(void) {
@@ -43,8 +43,11 @@ static void addDock(QMainWindow* mainWindow, const char* id, const char* title, 
     // OBS wraps the widget in its own dock, lists it under Docks and saves
     // its position with the scene collection layout.
     (void)mainWindow;
-    if (!obs_frontend_add_dock_by_id(id, title, panel))
+    if (!obs_frontend_add_dock_by_id(id, title, panel)) {
+        // OBS didn't take the panel, so nothing else will delete it.
         blog(LOG_WARNING, "[ATEM] dock id '%s' already registered", id);
+        delete panel;
+    }
 #else
     auto* dock = new QDockWidget(title, mainWindow);
     dock->setObjectName(id);

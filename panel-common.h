@@ -3,6 +3,7 @@
 #include <QFrame>
 #include <QLabel>
 #include <QString>
+#include <QTimer>
 #include <QToolButton>
 
 #include "atem-controller.h"
@@ -25,4 +26,15 @@ public:
 private:
     QLabel* m_dot;
     QLabel* m_status;
+};
+
+// One line under a panel's header for an action the switcher refused (or
+// that couldn't be sent). Hidden until show(); hides itself after a while.
+class ErrorLine : public QLabel {
+public:
+    explicit ErrorLine(QWidget* parent = nullptr);
+    void show(const QString& message);
+
+private:
+    QTimer* m_timer;
 };

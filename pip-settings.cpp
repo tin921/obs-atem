@@ -55,11 +55,11 @@ struct JsonReader {
         if (!v.isBool()) fail(key, "true or false");
         return v.toBool(fallback);
     }
-    double number(const QString& key, double fallback, bool required = false) {
+    double number(const QString& key, double fallback, bool required, double min, double max) {
         QJsonValue v = obj.value(key);
         if (v.isUndefined() && !required) return fallback;
-        if (!v.isDouble() || !std::isfinite(v.toDouble())) {
-            fail(key, "a number");
+        if (!v.isDouble() || !std::isfinite(v.toDouble()) || v.toDouble() < min || v.toDouble() > max) {
+            fail(key, QString("a number from %1 to %2").arg(min).arg(max));
             return fallback;
         }
         return v.toDouble();
@@ -74,6 +74,22 @@ struct JsonReader {
         return static_cast<qint64>(d);
     }
 };
+
+// What a preset may hold. Generous on purpose: a preset can keep a PiP
+// parked far off screen or a size the switcher allows; these only keep out
+// values no switcher takes (and damaged data), from a file or the registry.
+constexpr double kMaxPosition = 1000;
+constexpr double kMaxSize = 4;
+constexpr double kMaxCrop = 100;
+constexpr qint64 kMaxInput = 0xFFFF;
+
+bool presetInRange(const PipPreset& p) {
+    auto in = [](double v, double lo, double hi) { return std::isfinite(v) && v >= lo && v <= hi; };
+    return p.programInput >= 0 && p.programInput <= kMaxInput && p.pipInput >= 0 && p.pipInput <= kMaxInput &&
+           in(p.positionX, -kMaxPosition, kMaxPosition) && in(p.positionY, -kMaxPosition, kMaxPosition) &&
+           in(p.sizeX, 0, kMaxSize) && in(p.sizeY, 0, kMaxSize) && in(p.cropTop, 0, kMaxCrop) &&
+           in(p.cropBottom, 0, kMaxCrop) && in(p.cropLeft, 0, kMaxCrop) && in(p.cropRight, 0, kMaxCrop);
+}
 
 } // namespace
 
@@ -127,6 +143,9 @@ void PipSettings::load() {
         bool anyEdge = p.cropTop > 0 || p.cropBottom > 0 || p.cropLeft > 0 || p.cropRight > 0;
         p.cropEnabled = s.value(presetKey(i, "cropEnabled"), anyEdge).toBool();
         p.thumbnail.loadFromData(s.value(presetKey(i, "thumbnail")).toByteArray(), "PNG");
+        // Damaged values are never sent to the switcher: the button shows as empty
+        // (the registry keeps them until the button is saved again).
+        if (!presetInRange(p)) p = PipPreset();
     }
 }
 
@@ -337,8 +356,23 @@ PipSettings::ImportResult PipSettings::importJson(const QByteArray& json) {
         result.error = "This is not a PiP settings file exported from the ATEM PiP panel.";
         return result;
     }
-    if (root.value("version").toInt() > kExportVersion) {
-        result.error = "This file was exported by a newer version of the plugin.";
+    const QJsonValue version = root.value("version");
+    if (!version.isDouble() || version.toDouble() != kExportVersion) {
+        result.error = version.isDouble() && version.toDouble() > kExportVersion
+                           ? "This file was exported by a newer version of the plugin."
+                           : "This PiP settings file has no version, or one this plugin doesn't read.";
+        return result;
+    }
+    // The file replaces every preset, so its lists must really be there: a
+    // missing or damaged list must never read as "no presets".
+    for (const char* key : { "cameras", "presets" }) {
+        if (!root.value(key).isArray()) {
+            result.error = QString("This PiP settings file has no \"%1\" list.").arg(key);
+            return result;
+        }
+    }
+    if (root.contains("views") && !root.value("views").isArray()) {
+        result.error = "\"views\" must be a list of button numbers.";
         return result;
     }
 
@@ -347,12 +381,14 @@ PipSettings::ImportResult PipSettings::importJson(const QByteArray& json) {
     struct CameraIn { bool present = false; QString name; QColor color; QString picture; };
     std::array<CameraIn, kCameraCount> cameras;
     for (const QJsonValue& v : root.value("cameras").toArray()) {
+        if (!v.isObject()) { error = "Every entry of \"cameras\" must be an object."; break; }
         QJsonObject o = v.toObject();
         JsonReader r{ o, "Camera", error };
         int cam = static_cast<int>(r.integer("camera", 1, kCameraCount)) - 1;
         if (!error.isEmpty()) break;
         r.where = QString("Camera %1").arg(cam + 1);
         CameraIn& in = cameras[cam];
+        if (in.present) { error = QString("Camera %1 is in the file twice.").arg(cam + 1); break; }
         in.present = true;
         in.name = r.string("name").trimmed().left(20);
         QString color = r.string("color");
@@ -365,6 +401,7 @@ PipSettings::ImportResult PipSettings::importJson(const QByteArray& json) {
 
     std::array<PipPreset, kPresetCount> presets{};
     for (const QJsonValue& v : root.value("presets").toArray()) {
+        if (!v.isObject()) { error = "Every entry of \"presets\" must be an object."; break; }
         QJsonObject o = v.toObject();
         JsonReader r{ o, "Button", error };
         int index = static_cast<int>(r.integer("button", 1, kPresetCount)) - 1;
@@ -374,17 +411,17 @@ PipSettings::ImportResult PipSettings::importJson(const QByteArray& json) {
             error = QString("Button %1 is in the file twice.").arg(index + 1);
         PipPreset& p = presets[index];
         p.valid = true;
-        p.programInput = r.integer("programInput", 0, 1LL << 40);
-        p.pipInput = r.integer("pipInput", 0, 1LL << 40);
+        p.programInput = r.integer("programInput", 0, kMaxInput);
+        p.pipInput = r.integer("pipInput", 0, kMaxInput);
         p.onAir = r.boolean("onAir", false);
-        p.positionX = r.number("positionX", 0, true);
-        p.positionY = r.number("positionY", 0, true);
-        p.sizeX = r.number("sizeX", 0, true);
-        p.sizeY = r.number("sizeY", p.sizeX);
-        p.cropTop = r.number("cropTop", 0);
-        p.cropBottom = r.number("cropBottom", 0);
-        p.cropLeft = r.number("cropLeft", 0);
-        p.cropRight = r.number("cropRight", 0);
+        p.positionX = r.number("positionX", 0, true, -kMaxPosition, kMaxPosition);
+        p.positionY = r.number("positionY", 0, true, -kMaxPosition, kMaxPosition);
+        p.sizeX = r.number("sizeX", 0, true, 0, kMaxSize);
+        p.sizeY = r.number("sizeY", p.sizeX, false, 0, kMaxSize);
+        p.cropTop = r.number("cropTop", 0, false, 0, kMaxCrop);
+        p.cropBottom = r.number("cropBottom", 0, false, 0, kMaxCrop);
+        p.cropLeft = r.number("cropLeft", 0, false, 0, kMaxCrop);
+        p.cropRight = r.number("cropRight", 0, false, 0, kMaxCrop);
         bool anyEdge = p.cropTop > 0 || p.cropBottom > 0 || p.cropLeft > 0 || p.cropRight > 0;
         p.cropEnabled = r.boolean("cropEnabled", anyEdge);
     }
@@ -396,6 +433,10 @@ PipSettings::ImportResult PipSettings::importJson(const QByteArray& json) {
         if (!v.isDouble() || n != std::floor(n) || n < 1 || n > kPresetCount) {
             if (error.isEmpty())
                 error = QString("\"views\" must list button numbers from 1 to %1.").arg(kPresetCount);
+            break;
+        }
+        if (views.contains(static_cast<int>(n) - 1)) {
+            if (error.isEmpty()) error = QString("\"views\" lists button %1 twice.").arg(static_cast<int>(n));
             break;
         }
         views.append(static_cast<int>(n) - 1);

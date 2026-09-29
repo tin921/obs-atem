@@ -84,8 +84,21 @@ bool AtemSession::autoConnect() {
     return connectUSB();
 }
 
+PipRecallResult AtemSession::recallPreset(const PipPreset& preset) {
+    if (m_busy || !isConnected()) return { false, "Not connected to the ATEM." };
+    emit presetRecalling();
+    return recallPipPreset(m_atem.pip(), preset, m_atem.pip().state());
+}
+
 bool AtemSession::finishConnect(bool ok, bool viaIP, const QString& address) {
     m_busy = false;
+    if (m_shutdownPending) {
+        // OBS asked to exit while ConnectTo was pumping messages: shut down
+        // now that the controller's lock is free.
+        m_shutdownPending = false;
+        shutdown();
+        return false;
+    }
     if (ok) {
         QSettings settings(kSettingsOrg, kSettingsApp);
         settings.setValue(kModeKey, viaIP ? "ip" : "usb");
@@ -103,6 +116,14 @@ void AtemSession::disconnect() {
 }
 
 void AtemSession::shutdown() {
+    // During ConnectTo the controller holds its (non-recursive) lock on this
+    // very thread and the SDK pumps messages, so an exit can arrive here
+    // re-entrantly: shutting down now would lock it again. finishConnect
+    // shuts down as soon as ConnectTo returns.
+    if (m_busy) {
+        m_shutdownPending = true;
+        return;
+    }
     // Removing the SDK callbacks (inside shutdown) is what stops further
     // notifications; the std::function handlers can stay in place.
     bool wasConnected = m_atem.state() != AtemState::Disconnected;

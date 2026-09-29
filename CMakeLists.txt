@@ -53,17 +53,12 @@ find_library(OBS_FRONTEND_LIB
         ${CMAKE_BINARY_DIR}
 )
 
-# ── Find Qt (OBS 28+ uses Qt6, older uses Qt5) ──────────────
+# ── Find Qt 6 (OBS 28+; the panels use Qt 6 APIs, there is no Qt 5 build) ──
 find_package(Qt6 COMPONENTS Widgets Core Gui QUIET)
 if(Qt6_FOUND)
     set(QT_LIBS Qt6::Widgets Qt6::Core Qt6::Gui)
 else()
-    find_package(Qt5 5.15 COMPONENTS Widgets Core Gui QUIET)
-    if(Qt5_FOUND)
-        set(QT_LIBS Qt5::Widgets Qt5::Core Qt5::Gui)
-    else()
-        message(WARNING "Qt not found: only atem-cli will be built. Set Qt6_DIR.")
-    endif()
+    message(WARNING "Qt 6 not found: only atem-cli will be built. Set Qt6_DIR (the Qt version of the installed OBS).")
 endif()
 
 # ── Find Blackmagic ATEM SDK ─────────────────────────────────

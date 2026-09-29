@@ -102,6 +102,8 @@ void AtemViewsDock::buildUI() {
         updatePage();
     });
     mainLayout->addWidget(m_header);
+    m_error = new ErrorLine(this);
+    mainLayout->addWidget(m_error);
 
     m_pages = new QStackedWidget(this);
     mainLayout->addWidget(m_pages, 1);
@@ -229,7 +231,9 @@ void AtemViewsDock::rebuildGrid() {
         connect(btn, &QAbstractButton::clicked, this, [this, index]() {
             const PipPreset& p = m_settings->preset(index);
             if (!p.valid || !m_session->isConnected() || m_session->isBusy()) return;
-            recallPipPreset(m_session->pip(), p, m_session->pip().state());
+            PipRecallResult r = m_session->recallPreset(p);
+            if (!r.ok) m_error->show(QString("View %1: %2").arg(index + 1).arg(r.error));
+            else m_error->hide();
         });
         m_grid->addWidget(btn, i / kColumns, i % kColumns);
         m_buttons.emplace_back(index, btn);

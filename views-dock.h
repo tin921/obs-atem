@@ -46,6 +46,7 @@ private:
     PipSettings* m_settings;
 
     PanelHeader* m_header = nullptr;
+    class ErrorLine* m_error = nullptr;
     QStackedWidget* m_pages = nullptr;
     QWidget* m_offlinePage = nullptr;
     QLabel* m_offlineText = nullptr;
