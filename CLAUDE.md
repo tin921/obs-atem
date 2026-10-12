@@ -10,7 +10,7 @@ COM SDK. No middleware server, no browser dock, no external process.
   box, 20 preset buttons (7 visible, the column scrolls); layout reference
   `mockups/index.html`
 - **ATEM Views** panel — the operator's launcher for those presets ("views"),
-  like the macro panel for macros: chosen presets as pictures in 2 columns,
+  like the macro panel for macros: chosen presets as pictures in 2 columns (or 1),
   click to recall; ⚙ picks which and their order
 
 The plugin is tested against the real ATEM Mini. Offline development and the
@@ -77,6 +77,34 @@ This is a hard constraint from OBS, not a preference.
 - The last connection mode (USB/IP) and IP are stored with QSettings under
   `HKCU\Software\obs-atem\obs-atem`.
 
+### Profile gate (one OBS instance uses the ATEM)
+
+The church runs two OBS instances from a batch file (PhoneLiveStreaming.com
+profile first, then YouTube.com); over USB the ATEM takes one connection, so
+they took it from each other (church logs 2026-10-11). Ethernet is not an
+option there. plugin-main.cpp gates the plugin by OBS profile:
+
+- `settings.json` in `obs_module_config_path` (shared by all instances),
+  key `target_profile`: no key = every profile (old behaviour, the default);
+  `""` = none; a name = only that profile. Set by the checkable
+  **Tools → ATEM Control (this profile)** item.
+- The chosen profile's docks are added in `obs_module_load` (so OBS restores
+  their place) and it connects at FINISHED_LOADING. Any other profile gets no
+  docks (`obs_frontend_remove_dock` when it already had them) and disconnects.
+  Re-applied on PROFILE_CHANGED and when the file changes (QFileSystemWatcher
+  on the folder, the file is replaced by rename; 300 ms debounce), so a running
+  instance lets go within ~50 ms of the tick elsewhere. Docks added to a
+  running instance (live handover) start hidden — turn them on under Docks.
+- OBS's DockState (`user.ini`) is shared and written by the instance that
+  closes last. Qt keeps placeholders for docks it doesn't have, so the ATEM
+  dock names survive, but they come back hidden. The ATEM instance therefore
+  saves `mainWindow->saveState()` (keys `layout`, `layout_profile`) at EXIT
+  when a panel is shown (erases them when all are closed on purpose), and at
+  FINISHED_LOADING restores it if no ATEM panel is shown.
+- Simultaneous ConnectTo from two processes: one fails 'cfst', the other can
+  hang in ConnectTo indefinitely (OBS not responding). The gate avoids it;
+  advise `timeout /t 5` between the two starts (`/t 1` waits 0–1 s).
+
 ### Threading rules
 
 - BMD SDK callbacks arrive on SDK threads. `AtemSession` marshals every one to
@@ -102,7 +130,8 @@ This is a hard constraint from OBS, not a preference.
 obs-atem/
 ├── CMakeLists.txt              # Targets: obs-atem (plugin), atem-harness, atem-cli
 ├── CLAUDE.md / README.md / CONTRIBUTING.md
-├── plugin-main.cpp             # OBS entry: creates AtemSession, registers the three docks
+├── plugin-main.cpp             # OBS entry: creates AtemSession, registers the three docks;
+│                               #   profile gate (Tools item, settings.json, own layout)
 ├── atem-controller.h/cpp       # BMD SDK wrapper (Qt-free)
 │                               #   - USB auto-detect / IP connect, failure reasons
 │                               #   - Macro enumeration, run/stop/resume, run status
@@ -125,7 +154,7 @@ obs-atem/
 ├── pip-settings.h/cpp          # Camera names/colours/pictures + presets (QSettings "pip/...")
 │                               #   + Views choice ("views/slots")
 ├── pip-presets.h/cpp           # Preset match + recall, shared by PiP and Views
-├── views-dock.h/cpp            # ATEM Views panel: chosen presets, 2 columns, ⚙ order
+├── views-dock.h/cpp            # ATEM Views panel: chosen presets, 2 or 1 columns, ⚙ order
 ├── settings-dialog.h/cpp       # ⚙ dialog: status, USB/IP connect, connection log, troubleshooting
 ├── obs-log.h                   # blog(): libobs inside OBS, stderr elsewhere
 ├── harness/main.cpp            # atem-harness: the three panels + "ATEM log" dock (SDK calls)
@@ -144,8 +173,9 @@ obs-atem/
 - The SDK headers (BMDSwitcherAPI.h) must be downloaded separately from
   https://www.blackmagicdesign.com/developer/products/atem/sdk-and-software
   The SDK manual is `Blackmagic Switchers SDK.pdf` in the SDK root folder.
-- Multiple clients can connect to the ATEM simultaneously — having ATEM
-  Software Control open alongside OBS is fine.
+- Over Ethernet multiple clients can connect to the ATEM simultaneously —
+  having ATEM Software Control open alongside OBS is fine. Over USB a new
+  connection takes the ATEM from the previous one (see Profile gate).
 - Macros are stored on the ATEM hardware, not in software. Record/edit them
   in ATEM Software Control; this plugin reads and triggers them by index.
 - The ATEM Software Control app does NOT need to be running for the SDK to work.
@@ -200,7 +230,8 @@ values).
   `session.pip().state()`; it does not need the PiP panel. The session emits
   `presetRecalling()` first, so the PiP panel drops its queued edits and holds
   (they would otherwise be sent over the recalled view). Its choice is
-  QSettings `views/slots` ("1,10,20").
+  QSettings `views/slots` ("1,10,20"); ⚙ "Single column" is
+  `views/singleColumn`.
 - A view whose PiP is on air only matches, and is only recalled, when
   upstream key 1 is a DVE key and the DVE isn't held by a DVE transition
   (`pipPresetBlocked`); otherwise the panel says why and sends nothing.
@@ -218,7 +249,8 @@ values).
   picture, colour or name changes, and after an import.
 - ⚙ Export / Import (`PipSettings::exportJson` / `importJson`): JSON with
   `"format": "obs-atem-pip", "version": 1`, cameras (name, colour, picture
-  *path*), showNames, the valid presets' values (no thumbnails) and `views`.
+  *path*), showNames, the valid presets' values (no thumbnails), `views` and
+  `viewsSingleColumn` (optional on import).
   Import validates the whole file first and changes nothing on any error:
   version exactly 1, `cameras` and `presets` present as lists (a missing
   list must never clear the presets), entries objects, no duplicate camera,
@@ -401,6 +433,10 @@ command above as Administrator.
   PiP key/fly/dve found, 14 inputs) and the PiP panel read live values
   (Color 1 on program, CAM 1 PiP on air at X -8, Y -4.55, size 0.5 — a
   flush bottom-left box, consistent with edges at X ±16 / Y ±9, +Y up)
+- 2026-10-11: profile gate added after the church's two-instance fight;
+  tested on this PC with two instances (AtemTest / Untitled) and the ATEM on
+  USB: the other profile never connects, live handover works, panels come
+  back when the other instance closes last
 - NEXT STEPS: confirm on the ATEM output that the PiP really is bottom-left;
   exercise camera buttons, drag, numbers, presets and macros on hardware
 
@@ -417,8 +453,8 @@ command above as Administrator.
 ## Known considerations
 
 - USB video capture (ATEM as UVC webcam) is separate from the control
-  connection. Only one app can capture the webcam feed at a time, but
-  multiple apps can connect to the control protocol simultaneously.
+  connection. Only one app can capture the webcam feed at a time; several
+  apps can share the control protocol over Ethernet, one over USB.
 - The plugin targets Windows only due to the COM-based BMD SDK.
 - ConnectTo blocks the OBS UI thread for a few seconds when no ATEM answers
   (at startup and on manual connect).

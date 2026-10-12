@@ -7,8 +7,8 @@ BMDSwitcherAPI COM SDK — no middleware server, no external process.
 - **ATEM Macros** — one-click buttons for the macros stored on the ATEM
 - **ATEM PiP** — pick the main and picture-in-picture cameras, move, scale
   and crop the PiP box, and save setups ("views") on up to 20 buttons
-- **ATEM Views** — the saved views as pictures in two columns, one click to
-  recall; you choose which appear and in what order
+- **ATEM Views** — the saved views as pictures in two columns (or one), one
+  click to recall; you choose which appear and in what order
 
 ---
 
@@ -76,7 +76,8 @@ recalls it on the ATEM.
 
 - The chosen presets as pictures, two per row — click one to recall it; the one
   on air is lit
-- ⚙ — pick which presets appear and in what order
+- ⚙ — pick which presets appear and in what order; **Single column** shows one
+  per row instead of two
 
 All three panels are normal OBS docks: show them from **Docks**, then drag them anywhere.
 
@@ -179,6 +180,31 @@ use one location, not both.)
    **RESUME** to continue one that is waiting for the user
 5. Click **⚙** in the macro panel for connection settings and troubleshooting
 
+### Two OBS instances on one PC
+
+Over USB the ATEM takes one control connection: when two OBS instances run
+(for example one per streaming profile), the one that connects last takes the
+ATEM from the other. Choose which one uses it: in the OBS instance with that
+profile, tick **Tools → ATEM Control (this profile)**. From then on:
+
+- only that profile shows the ATEM panels and connects to the ATEM;
+- every other profile has no ATEM panels and never connects; an instance
+  already running lets go of the ATEM as soon as it is ticked elsewhere;
+- unticking it leaves the ATEM to no profile.
+
+Until something is ticked, every profile uses the ATEM. The choice is saved
+in `%APPDATA%\obs-studio\plugin_config\obs-atem\settings.json` and is the same
+for every OBS instance of that Windows user.
+
+OBS keeps one window layout for all its instances, saved by whichever closes
+last. The instance that uses the ATEM saves its own layout as well, so its
+panels come back where they were even when the other instance closed last.
+
+If a batch file starts both instances, start the ATEM one last and leave a few
+seconds between them (`timeout /t 5 /nobreak > nul`): two instances starting
+in the same second write the same log file name, and `timeout /t 1` waits less
+than a second.
+
 ---
 
 ## Development tools
@@ -225,6 +251,14 @@ the ATEM's subnet (default ATEM IP `192.168.10.240`).
 → Macros are stored on the ATEM. Record them in ATEM Software Control first;
 this plugin reads and triggers them by index.
 
+**Two OBS instances take the ATEM from each other ("Connection to the ATEM was lost")**
+→ Tick **Tools → ATEM Control (this profile)** in the instance that should
+use it (see [Two OBS instances on one PC](#two-obs-instances-on-one-pc)).
+
+**No ATEM panels after ticking ATEM Control in an OBS that was already running**
+→ Panels added to a running OBS start hidden: turn them on under **Docks**.
+OBS remembers them from then on.
+
 **PiP position/size do nothing**
 → Upstream key 1 must be a DVE key. The PiP panel shows a warning and a
 **Set key type to DVE** button when it isn't.
@@ -262,8 +296,8 @@ obs-atem/
 
 ## Notes
 
-- Several clients can connect to the ATEM at once — ATEM Software Control can
-  stay open alongside OBS.
+- Over Ethernet several clients can connect to the ATEM at once — ATEM
+  Software Control can stay open alongside OBS. Over USB it takes one.
 - Using the ATEM as an OBS webcam source is separate from this control
   connection; both work together.
 - Windows only — BMDSwitcherAPI is a COM library.

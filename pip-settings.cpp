@@ -123,6 +123,7 @@ void PipSettings::load() {
     } else {
         for (int i = 0; i < kVisiblePresets; ++i) m_viewSlots.append(i);
     }
+    m_viewsSingleColumn = s.value("views/singleColumn", false).toBool();
 
     for (int i = 0; i < kPresetCount; ++i) {
         PipPreset& p = m_presets[i];
@@ -245,6 +246,13 @@ void PipSettings::setViewSlots(const QList<int>& order) {
     emit changed();
 }
 
+void PipSettings::setViewsSingleColumn(bool single) {
+    if (m_viewsSingleColumn == single) return;
+    m_viewsSingleColumn = single;
+    QSettings(kSettingsOrg, kSettingsApp).setValue("views/singleColumn", single);
+    emit changed();
+}
+
 void PipSettings::setDeviceInputs(const std::vector<AtemInputInfo>& inputs) {
     std::map<BMDSwitcherInputId, QString> names;
     for (const auto& in : inputs) names[in.id] = QString::fromStdString(in.longName);
@@ -339,6 +347,7 @@ QByteArray PipSettings::exportJson() const {
     QJsonArray views;
     for (int index : m_viewSlots) views.append(index + 1);
     root["views"] = views;
+    root["viewsSingleColumn"] = m_viewsSingleColumn;
 
     return QJsonDocument(root).toJson(QJsonDocument::Indented);
 }
@@ -398,6 +407,7 @@ PipSettings::ImportResult PipSettings::importJson(const QByteArray& json) {
         in.picture = r.string("picture");
     }
     bool showNames = JsonReader{ root, "File", error }.boolean("showNames", m_showNames);
+    bool viewsSingleColumn = JsonReader{ root, "File", error }.boolean("viewsSingleColumn", m_viewsSingleColumn);
 
     std::array<PipPreset, kPresetCount> presets{};
     for (const QJsonValue& v : root.value("presets").toArray()) {
@@ -465,6 +475,7 @@ PipSettings::ImportResult PipSettings::importJson(const QByteArray& json) {
             if (presets[i].valid) ++result.presets;
         }
         if (hasViews) setViewSlots(views);
+        setViewsSingleColumn(viewsSingleColumn);
     }
     emit changed();
     result.ok = true;

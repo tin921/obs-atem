@@ -80,10 +80,13 @@ public:
     // preset indices; default 0–6).
     const QList<int>& viewSlots() const { return m_viewSlots; }
     void setViewSlots(const QList<int>& order);
+    // The Views panel shows one column instead of two.
+    bool viewsSingleColumn() const { return m_viewsSingleColumn; }
+    void setViewsSingleColumn(bool single);
 
     // Export / import of everything above as JSON: camera names, colours
     // and picture file paths (not the pictures), "show names", the preset
-    // buttons' values and the Views choice. Preset thumbnails are not
+    // buttons' values and the Views choice and columns. Preset thumbnails are not
     // included: imported presets have none until they are drawn again.
     QByteArray exportJson() const;
     struct ImportResult {
@@ -114,4 +117,5 @@ private:
     std::map<BMDSwitcherInputId, QString> m_deviceNames;
     bool m_showNames = false;
     QList<int> m_viewSlots;
+    bool m_viewsSingleColumn = false;
 };

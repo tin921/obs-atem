@@ -8,6 +8,7 @@
 class PanelHeader;
 class PipSettings;
 class PresetButton;
+class QCheckBox;
 class QGridLayout;
 class QLabel;
 class QListWidget;
@@ -18,9 +19,9 @@ class QStackedWidget;
 //
 // The operator's launcher for the PiP presets built in the PiP panel, the
 // way the macro panel launches the switcher's macros: the chosen presets'
-// pictures in two columns; clicking one recalls it, the one on air is lit.
-// ⚙ chooses which presets appear and in what order (left to right, top to
-// bottom). Talks to the switcher itself, so the PiP panel need not be open.
+// pictures in two columns (or one); clicking one recalls it, the one on air
+// is lit. ⚙ chooses which presets appear, in what order (left to right, top
+// to bottom) and the columns. Talks to the switcher itself, so the PiP panel need not be open.
 
 class AtemViewsDock : public QWidget {
     Q_OBJECT
@@ -33,6 +34,7 @@ protected:
 private:
     void buildUI();
     QWidget* buildSettingsPage();
+    int columns() const;
     void rebuildGrid();
     void layoutGrid();
     void updateLit();
@@ -61,5 +63,6 @@ private:
     std::vector<std::pair<int, PresetButton*>> m_buttons;   // preset index, button
 
     QListWidget* m_list = nullptr;
+    QCheckBox* m_singleColumn = nullptr;
     bool m_fillingList = false;
 };

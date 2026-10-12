@@ -4,6 +4,7 @@
 #include "pip-settings.h"
 #include "pip-widgets.h"
 
+#include <QCheckBox>
 #include <QEvent>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -12,6 +13,7 @@
 #include <QPainter>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSignalBlocker>
 #include <QStackedWidget>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -19,11 +21,13 @@
 
 namespace {
 
-constexpr int kColumns = 2;
 constexpr int kMargin = 6;
 constexpr int kSpacing = 4;
 
 const char* const kViewsExtraStyle = R"(
+    QCheckBox {
+        font-size: 11px;
+    }
     #settingsTitle {
         font-size: 12px;
         font-weight: 600;
@@ -83,6 +87,8 @@ AtemViewsDock::AtemViewsDock(AtemSession* session, PipSettings* settings, QWidge
     connect(m_settings, &PipSettings::changed, this, [this]() {
         rebuildGrid();
         if (m_showingSettings && !m_fillingList) fillSettingsList();
+        QSignalBlocker block(m_singleColumn);
+        m_singleColumn->setChecked(m_settings->viewsSingleColumn());
     });
 
     rebuildGrid();
@@ -95,7 +101,7 @@ void AtemViewsDock::buildUI() {
     mainLayout->setSpacing(0);
 
     m_header = new PanelHeader("ATEM VIEWS", this);
-    auto* settingsBtn = m_header->addToolButton("⚙", "Choose which views are shown, and their order");
+    auto* settingsBtn = m_header->addToolButton("⚙", "Choose which views are shown, their order and columns");
     connect(settingsBtn, &QToolButton::clicked, this, [this]() {
         m_showingSettings = true;
         fillSettingsList();
@@ -124,7 +130,7 @@ void AtemViewsDock::buildUI() {
     offLayout->addWidget(m_connectBtn);
     m_pages->addWidget(m_offlinePage);
 
-    // Main page: the views in two columns
+    // Main page: the views in two columns (or one)
     auto* scroll = new QScrollArea(m_pages);
     scroll->setWidgetResizable(true);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -170,6 +176,12 @@ QWidget* AtemViewsDock::buildSettingsPage() {
     });
     head->addWidget(doneBtn);
     layout->addLayout(head);
+
+    m_singleColumn = new QCheckBox("Single column", page);
+    m_singleColumn->setToolTip("Show the views one per row instead of two");
+    m_singleColumn->setChecked(m_settings->viewsSingleColumn());
+    connect(m_singleColumn, &QCheckBox::toggled, m_settings, &PipSettings::setViewsSingleColumn);
+    layout->addWidget(m_singleColumn);
 
     auto* hint = new QLabel("Tick the PiP buttons to show here. Their order is the order in the "
                             "panel, left to right, top to bottom: drag a row, or use ▲ ▼.", page);
@@ -235,7 +247,7 @@ void AtemViewsDock::rebuildGrid() {
             if (!r.ok) m_error->show(QString("View %1: %2").arg(index + 1).arg(r.error));
             else m_error->hide();
         });
-        m_grid->addWidget(btn, i / kColumns, i % kColumns);
+        m_grid->addWidget(btn, i / columns(), i % columns());
         m_buttons.emplace_back(index, btn);
     }
     m_emptyHint->setVisible(order.isEmpty());
@@ -243,10 +255,14 @@ void AtemViewsDock::rebuildGrid() {
     updateLit();
 }
 
+int AtemViewsDock::columns() const {
+    return m_settings->viewsSingleColumn() ? 1 : 2;
+}
+
 void AtemViewsDock::layoutGrid() {
     int w = m_gridBody->width() - 2 * kMargin;
     if (w <= 0) return;
-    int buttonWidth = (w - (kColumns - 1) * kSpacing) / kColumns;
+    int buttonWidth = (w - (columns() - 1) * kSpacing) / columns();
     int buttonHeight = static_cast<int>(std::lround(buttonWidth * 9.0 / 16));
     for (auto& [index, btn] : m_buttons) btn->setFixedHeight(buttonHeight);
 }
